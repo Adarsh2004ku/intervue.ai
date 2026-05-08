@@ -1,5 +1,6 @@
 -- =============================================
 -- INTERVUE.AI — Complete Database Schema
+-- USED AT SUPABASE SQL EDITOR
 -- =============================================
 
 -- Step 1: Enable pgvector extension
