@@ -20,7 +20,7 @@ def embed_texts(text :str) -> list[float]:
     model = get_embeddings_model()
     return model.embed_query(text)
 
-def embed_texts(texts:list[str]) -> list[list[float]]:
+def embed_text(texts:list[str]) -> list[list[float]]:
     """ Embed multiple text strings into 768-dim vectors """
     model = get_embeddings_model()
     return model.embed_documents(texts)

@@ -1,5 +1,5 @@
 import hashlib
-from backend.services.embeddings.embedder import embed_texts
+from backend.services.embeddings.embedder import embed_text
 from backend.db.session import supabase
 from backend.core.logging import get_logger
 """
@@ -58,7 +58,7 @@ def embed_and_store(
     logger.info('embedding_chunks',count = len(texts),resume_id = resume_id)
 
     # embed all chunks in batch
-    vectors = embed_texts(texts)
+    vectors = embed_text(texts)
     # builds rows for upset
 
     rows = []
