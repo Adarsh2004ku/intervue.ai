@@ -1,11 +1,3 @@
-import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
-from backend.services.resume_parser import extract_text, classify_resume
-from backend.services.rag_ingestion import chunk_text, embed_and_store
-from backend.db.session import supabase
-from backend.core.security import decode_access_token
-from backend.core.logging import get_logger
-from fastapi import Request  
 """
 Resume routes:
 - POST /upload — Upload PDF/DOCX resume, parse, embed, store
@@ -13,39 +5,37 @@ Resume routes:
 - DELETE /{id} — Delete resume and all chunks
 """
 
+import uuid
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
+from backend.services.resume_parser import extract_text, classify_resume
+from backend.services.rag_ingestion import chunk_text, embed_and_store
+from backend.db.session import supabase
+from backend.core.security import get_current_user  # <-- Import the dependency
+from backend.core.logging import get_logger
+
 logger = get_logger("resume_routes")
 router = APIRouter()
 
 
-
 @router.post("/upload")
 async def upload_resume(
-    request: Request,  # Add Request object
     file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)  # <-- This handles auth automatically!
 ):
     """Upload a resume (PDF or DOCX), parse it, embed it, store in pgvector."""
-    # Read auth from the HTTP request headers properly
-    authorization = request.headers.get("authorization", "")
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing token")
-    payload = decode_access_token(authorization.replace("Bearer ", ""))
-    user_id = payload["sub"]
-    
-    # ... (rest of the function remains exactly the same)
+    user_id = user["sub"]  # Extract user_id from the verified token
 
+    # Validate file type
     if not file.filename:
-        raise HTTPException(status_code=400,
-                            detail=f"Only {', '.join(allowed_types)} files are supported",
-        )
+        raise HTTPException(status_code=400, detail="No filename provided")
+
     allowed_types = [".pdf", ".docx"]
     if not any(file.filename.lower().endswith(t) for t in allowed_types):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only {', '.join(allowed_types)} files are supported",
-        )
+        raise HTTPException(status_code=400, detail=f"Only {', '.join(allowed_types)} files are supported")
+
     # Read file
     file_bytes = await file.read()
-    if len(file_bytes) > 10 * 1024 * 1024:  # 10MB limit
+    if len(file_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
     # Extract text
@@ -86,12 +76,7 @@ async def upload_resume(
 
     stored = embed_and_store(resume_id, chunks, section_tags)
 
-    logger.info(
-        "resume_uploaded",
-        resume_id=resume_id,
-        chunks_stored=stored,
-        user_id=user_id,
-    )
+    logger.info("resume_uploaded", resume_id=resume_id, chunks_stored=stored, user_id=user_id)
 
     return {
         "resume_id": resume_id,
@@ -100,30 +85,20 @@ async def upload_resume(
         "message": "Resume processed successfully",
     }
 
-@router.get("/{resume_id}")
-async def get_resume(resume_id: str, authorization: str = ""):
-    """Get parsed resume data."""
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing token")
 
+@router.get("/{resume_id}")
+async def get_resume(resume_id: str, user: dict = Depends(get_current_user)):
+    """Get parsed resume data."""
     result = supabase.table("resumes").select("*").eq("id", resume_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Resume not found")
-
     return result.data[0]
 
 
 @router.delete("/{resume_id}")
-async def delete_resume(resume_id: str, authorization: str = ""):
+async def delete_resume(resume_id: str, user: dict = Depends(get_current_user)):
     """Delete resume and all associated chunks."""
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing token")
-
-    # Delete chunks first (cascade should handle this, but be explicit)
     supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
     supabase.table("resumes").delete().eq("id", resume_id).execute()
-
     logger.info("resume_deleted", resume_id=resume_id)
     return {"message": "Resume deleted successfully"}
-
-

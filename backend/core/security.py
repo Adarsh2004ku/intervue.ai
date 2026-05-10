@@ -1,54 +1,48 @@
-from datetime import datetime, timedelta, timezone
-from jose import JWTError, jwt
-import bcrypt
-from fastapi import HTTPException, status
-from backend.core.config import settings
-
 """
 JWT token creation and verification.
 Password hashing with bcrypt directly (no passlib).
 """
+
+from datetime import datetime, timedelta, timezone
+from jose import JWTError, jwt
+import bcrypt
+from fastapi import HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from backend.core.config import settings
+
+
 def hash_password(password: str) -> str:
     """Hash a plain password using bcrypt."""
-    # bcrypt requires bytes, so we encode the password
     password_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
     hashed_bytes = bcrypt.hashpw(password_bytes, salt)
-    # Return as string for database storage
     return hashed_bytes.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain password against a bcrypt hash."""
-    plain_bytes = plain_password.encode('utf-8')
-    hashed_bytes = hashed_password.encode('utf-8')
-    return bcrypt.checkpw(plain_bytes, hashed_bytes)
+    if not hashed_password:
+        return False # Prevents crash if database has no password
+    
+    try:
+        plain_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(plain_bytes, hashed_bytes)
+    except Exception:
+        # If the hash is malformed or wrong format, return False instead of crashing
+        return False
 
 
 def create_access_token(data: dict) -> str:
-    """
-    Create a JWT access token.
-    data should contain at least {"sub": user_id, "email": user_email}
-    """
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.jwt_expiry_minutes
-    )
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes)
     to_encode.update({"exp": expire})
-    return jwt.encode(
-        to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm
-    )
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict:
-    """
-    Decode and verify a JWT token.
-    Raises HTTPException if token is invalid or expired.
-    """
     try:
-        payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-        )
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         return payload
     except JWTError:
         raise HTTPException(
@@ -56,3 +50,16 @@ def decode_access_token(token: str) -> dict:
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+# --- NEW: FastAPI Security Scheme & Dependency ---
+security_scheme = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security_scheme)) -> dict:
+    """
+    FastAPI dependency that extracts the JWT from the Authorization header,
+    verifies it, and returns the user payload.
+    Using this makes the 🔒 Authorize button work in Swagger UI!
+    """
+    token = credentials.credentials
+    return decode_access_token(token)
