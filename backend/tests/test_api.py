@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
 
 
 class TestHealthEndpoint:
@@ -36,10 +37,14 @@ class TestAuthEndpoints:
 class TestResumeEndpoints:
     def test_upload_without_auth(self, client):
         """Resume upload without auth should return 401."""
-        response = client.post("/api/v1/resume/upload")
+        response = client.post(
+            "/api/v1/resume/upload",
+            files={"file": ("resume.pdf", b"dummy content", "application/pdf")}
+        )
         assert response.status_code == 401
 
-    def test_upload_invalid_file_type(self, client, auth_headers):
+    @patch("backend.api.v1.routes.resume.supabase")
+    def test_upload_invalid_file_type(self, mock_sb, client, auth_headers):
         """Resume upload with invalid file type should return 400."""
         response = client.post(
             "/api/v1/resume/upload",
@@ -50,9 +55,17 @@ class TestResumeEndpoints:
 
 
 class TestAdminEndpoints:
-    def test_dashboard_returns_data(self, client, mock_supabase):
+    # Patch supabase exactly where it is used in admin.py
+    @patch("backend.api.v1.routes.admin.supabase")
+    def test_dashboard_returns_data(self, mock_sb, client):
         """Admin dashboard should return KPI data."""
+        # Setup the mock to return empty lists so it doesn't crash
+        mock_execute = MagicMock(data=[])
+        mock_sb.table.return_value.select.return_value.execute.return_value = mock_execute
+        mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_execute
+
         response = client.get("/api/v1/admin/dashboard")
         assert response.status_code == 200
         data = response.json()
         assert "total_interviews" in data
+        assert data["total_interviews"] == 0

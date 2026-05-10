@@ -1,14 +1,12 @@
-
-
-from backend.services.embeddings.retriver import retrieve_chunks
-from ai.agents.state import InterviewState
-from backend.core.logging import get_logger
-
 """
 Retriever Agent — fetches relevant resume chunks from pgvector
 for the current question topic.
 Uses cosine similarity + MMR reranking for diverse context.
 """
+
+from backend.services.embeddings.retriever import retrieve_chunks  
+from ai.agents.state import InterviewState
+from backend.core.logging import get_logger
 
 logger = get_logger("retriever_agent")
 

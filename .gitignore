@@ -9,3 +9,4 @@ venv/
 dist/
 .next/
 *.egg-info/
+backend/tests

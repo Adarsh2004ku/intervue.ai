@@ -11,30 +11,50 @@ RAG ingestion pipeline:
 
 logger = get_logger("rag_ingestio")
 
-def chunk_text(text :str ,chunk_size : int = 500,overlap : int = 50)->list[dict]:
+def chunk_text(
+    text: str, chunk_size: int = 500, overlap: int = 50
+) -> list[dict]:
     """
     Split text into overlapping chunks.
-    Each chunk is a dict with 'text', 'start', 'end' fields.
-    Tries to break at sentence boundaries.
+    Tries to break at sentence boundaries (., !, ?, \n).
     """
+    if not text:
+        return []
 
     chunks = []
     start = 0
-    while start<len(text):
-        if end < len(text):
-            # Look for period, exclamation, or newline
+
+    while start < len(text):
+        # Determine the end of the current chunk
+        end = start + chunk_size
+
+        # If we haven't reached the end of the text, try to find a sentence break
+        if end >= len(text):
+            end = len(text)
+        else:
+            # Look for the last sentence separator within the chunk
+            last_sep = -1
             for sep in [". ", "! ", "? ", "\n"]:
-                last_sep = text.rfind(sep, start, end)
-                if last_sep > start:
-                    end = last_sep + len(sep)
-                    break
-        
+                pos = text.rfind(sep, start, end)
+                if pos > last_sep:
+                    last_sep = pos
+            
+            # If we found a separator, break there; otherwise hard-break at chunk_size
+            if last_sep > start:
+                end = last_sep + 2  # Include the separator
+            else:
+                end = chunk_size
+
         chunk = text[start:end].strip()
-        if chunk and len(chunk) > 20:  # Skip very short chunks
+        
+        if chunk and len(chunk) > 20:  # Skip tiny fragments
             chunks.append({"text": chunk, "start": start, "end": end})
 
+        # Move the start pointer forward, minus the overlap
         start = end - overlap
-        if start >= len(text):
+        
+        # Safety: ensure start always moves forward to prevent infinite loops
+        if start <= 0 or end == len(text):
             break
 
     return chunks

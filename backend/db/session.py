@@ -14,7 +14,7 @@ def get_supabase_client()->Client:
     """ Crete and return a supabase client with a service role key"""
     return create_client(settings.supabase_url,settings.supabase_service_key)
 
-supabase: Client = get_supabase_client
+supabase: Client = get_supabase_client()
 
 # -- SQLALCHEMY ENGINE for connection pooling
 

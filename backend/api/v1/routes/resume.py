@@ -5,7 +5,7 @@ from backend.services.rag_ingestion import chunk_text, embed_and_store
 from backend.db.session import supabase
 from backend.core.security import decode_access_token
 from backend.core.logging import get_logger
-
+from fastapi import Request  
 """
 Resume routes:
 - POST /upload — Upload PDF/DOCX resume, parse, embed, store
@@ -16,15 +16,22 @@ Resume routes:
 logger = get_logger("resume_routes")
 router = APIRouter()
 
+
+
 @router.post("/upload")
-async def upload_resume(file : UploadFile = File(...),authorization : str = ""):
+async def upload_resume(
+    request: Request,  # Add Request object
+    file: UploadFile = File(...),
+):
     """Upload a resume (PDF or DOCX), parse it, embed it, store in pgvector."""
-    # Auth check
-    if not authorization.startswith("Bearer"):
-        raise HTTPException(status_code= 401,detail="Missing Token")
-    
-    payload = decode_access_token(authorization.replace("Bearer",""))
+    # Read auth from the HTTP request headers properly
+    authorization = request.headers.get("authorization", "")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = decode_access_token(authorization.replace("Bearer ", ""))
     user_id = payload["sub"]
+    
+    # ... (rest of the function remains exactly the same)
 
     if not file.filename:
         raise HTTPException(status_code=400,

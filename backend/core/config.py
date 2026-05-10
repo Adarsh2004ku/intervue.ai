@@ -6,6 +6,7 @@ No other file should read os.getenv() directly.
 
 from pydantic_settings import BaseSettings
 from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -52,11 +53,12 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
+    # Replace the `class Config:` block with this:
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
 # Singleton — import this everywhere
 settings = Settings()

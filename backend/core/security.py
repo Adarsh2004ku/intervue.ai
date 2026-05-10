@@ -1,54 +1,58 @@
-from datetime import datetime,timedelta,timezone
-from jose import JWTError,jwt
-from passlib.context import CryptContext
-from fastapi import HTTPException,status
+from datetime import datetime, timedelta, timezone
+from jose import JWTError, jwt
+import bcrypt
+from fastapi import HTTPException, status
 from backend.core.config import settings
 
-
 """
-JWT token creation and verification
-and password hashing with bcrypt
+JWT token creation and verification.
+Password hashing with bcrypt directly (no passlib).
 """
-
-pwd_context = CryptContext(schemes=["bcrypt"],deprecated = "auto")
-
-def hash_password(password:str)->str:
+def hash_password(password: str) -> str:
     """Hash a plain password using bcrypt."""
-    return pwd_context.hash(password)
+    # bcrypt requires bytes, so we encode the password
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_bytes = bcrypt.hashpw(password_bytes, salt)
+    # Return as string for database storage
+    return hashed_bytes.decode('utf-8')
 
-def verify_password(plain_password:str,hashed_password:str)->bool:
-    """
-    verify a plain password against bcrypt hash
-    """
-    return pwd_context.verify(plain_password,hashed_password)
 
-def create_access_token(data:dict)->str:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against a bcrypt hash."""
+    plain_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(plain_bytes, hashed_bytes)
+
+
+def create_access_token(data: dict) -> str:
     """
-    create JWT tokens data should contain at 
-    least {"sub":user_id,"email":user_email}
+    Create a JWT access token.
+    data should contain at least {"sub": user_id, "email": user_email}
     """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(
-        minutes = settings.jwt_expiry_minutes
+        minutes=settings.jwt_expiry_minutes
     )
-    to_encode.update({"exp":expire})
+    to_encode.update({"exp": expire})
     return jwt.encode(
-        to_encode,settings.jwt_secret,algorithm=settings.jwt_algorithm
+        to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm
     )
 
-def decode_access_token(token:str)->dict:
+
+def decode_access_token(token: str) -> dict:
     """
     Decode and verify a JWT token.
-    Raises HTTPException if token is valid or expired
+    Raises HTTPException if token is invalid or expired.
     """
     try:
         payload = jwt.decode(
-            token,settings.jwt_secret,algorithms = [settings.jwt_algorithm]
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         return payload
     except JWTError:
         raise HTTPException(
-            status_code = status.HTTP_401_UNAUTHORIZED,
-            detail = "Invalid or expired token",
-            headers={"WWW-Authenticate":"Bearer"}
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
