@@ -16,7 +16,6 @@ os.environ.setdefault("SUPABASE_SERVICE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 os.environ.setdefault("JWT_SECRET", "test-secret-32-characters-minimum")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
-
 @pytest.fixture
 def client():
     """FastAPI test client."""
