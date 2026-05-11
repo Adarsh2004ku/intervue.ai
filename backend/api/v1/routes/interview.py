@@ -1,526 +1,381 @@
-"""
-Interview routes:
-- POST /start — Initialize interview session, run Planner, return first question
-- WebSocket /{id}/session — Real-time audio/video exchange
-- GET /{id}/status — Get interview status
-"""
-
-import uuid
+import base64
 import json
+import asyncio
+from statistics import mean
 
-from fastapi import (
-    APIRouter,
-    WebSocket,
-    WebSocketDisconnect,
-    HTTPException,
-    Header,
-)
-from pydantic import BaseModel
-from typing import Literal
+from google import genai
 
-from ai.graph.builder import build_interview_graph
-from ai.personas.interviewer_personas import get_persona
-
-from backend.services.audio.gemini_stt import (
-    transcribe_and_evaluate_with_retry,
-)
-from backend.services.vision.behavior import analyze_frame
-
-from backend.db.session import supabase, redis_client
 from backend.core.config import settings
-from backend.core.security import decode_access_token
 from backend.core.logging import get_logger
 
 
-logger = get_logger("interview_routes")
-
-router = APIRouter()
+logger = get_logger("behavior")
 
 
-class StartInterviewRequest(BaseModel):
-    resume_id: str
-    job_role: str
-    interview_mode: Literal["faang", "startup", "hr"] = "faang"
+# =========================================================
+# Gemini Client
+# =========================================================
+client = genai.Client(
+    api_key=settings.google_api_key
+)
 
 
-class StartInterviewResponse(BaseModel):
-    interview_id: str
-    first_question: dict
-    persona_name: str
-    opening_line: str
+# =========================================================
+# Default Response
+# =========================================================
+DEFAULT_RESPONSE = {
+    "engagement_score": 50,
+    "confidence_score": 50,
+    "nervousness_score": 50,
+    "professionalism_score": 50,
+    "eye_contact": True,
+    "looking_away": False,
+    "distracted": False,
+    "expression": "neutral",
+    "emotion": "neutral",
+    "posture": "upright",
+    "confidence_level": "medium",
+    "notes": "Could not analyze behavior",
+}
 
 
-@router.post("/start", response_model=StartInterviewResponse)
-async def start_interview(
-    req: StartInterviewRequest,
-    authorization: str = Header(default=""),
-):
-    """
-    Start a new interview session.
-    """
+# =========================================================
+# Internal Sync Gemini Call
+# =========================================================
+def _generate_content(contents):
 
-    # Validate JWT
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Missing or invalid token",
-        )
+    return client.models.generate_content(
+        model="gemini-2.5-flash",
 
-    token = authorization.replace("Bearer ", "").strip()
+        contents=contents,
 
-    payload = decode_access_token(token)
-
-    if not payload:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token",
-        )
-
-    user_id = payload["sub"]
-
-    # Verify resume exists
-    resume_result = (
-        supabase
-        .table("resumes")
-        .select("*")
-        .eq("id", req.resume_id)
-        .execute()
-    )
-
-    if not resume_result.data:
-        raise HTTPException(
-            status_code=404,
-            detail="Resume not found",
-        )
-
-    resume = resume_result.data[0]
-
-    persona = get_persona(req.interview_mode)
-
-    # Create interview record
-    interview_id = str(uuid.uuid4())
-
-    # Initial LangGraph state
-    initial_state = {
-        "user_id": user_id,
-        "resume_id": req.resume_id,
-        "job_role": req.job_role,
-        "interview_mode": req.interview_mode,
-        "resume_summary": resume.get("parsed_json", {}),
-        "questions": [],
-        "answers": [],
-        "evaluations": [],
-        "behavior_data": [],
-        "current_index": 0,
-    }
-
-    # Run interview graph
-    graph = build_interview_graph()
-
-    result = graph.invoke(initial_state)
-
-    # First question fallback
-    first_question = (
-        result["questions"][0]
-        if result.get("questions")
-        else {
-            "text": persona["opening_line"],
-            "category": "General",
-            "topic": req.job_role,
-            "difficulty": "medium",
-            "why_asked": "Opening question",
-            "is_weakness_focused": False,
-            "order_idx": 0,
+        config={
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "top_k": 40,
         }
     )
 
-    # Store interview
-    (
-        supabase
-        .table("interviews")
-        .insert({
-            "id": interview_id,
-            "user_id": user_id,
-            "resume_id": req.resume_id,
-            "job_role": req.job_role,
-            "interview_mode": req.interview_mode,
-            "status": "in_progress",
-            "langgraph_thread_id": str(uuid.uuid4()),
-        })
-        .execute()
-    )
 
-    # Store first question
-    (
-        supabase
-        .table("questions")
-        .insert({
-            "id": str(uuid.uuid4()),
-            "interview_id": interview_id,
-            "text": first_question.get("text", ""),
-            "category": first_question.get("category", ""),
-            "topic": first_question.get("topic", ""),
-            "difficulty": first_question.get("difficulty", ""),
-            "why_asked": first_question.get("why_asked", ""),
-            "is_weakness_focused": first_question.get(
-                "is_weakness_focused",
-                False,
-            ),
-            "order_idx": 0,
-        })
-        .execute()
-    )
-
-    # Save interview state to Redis
-    redis_client.setex(
-        f"interview_state:{interview_id}",
-        7200,
-        json.dumps(result),
-    )
-
-    logger.info(
-        "interview_started",
-        interview_id=interview_id,
-        mode=req.interview_mode,
-        user_id=user_id,
-    )
-
-    return StartInterviewResponse(
-        interview_id=interview_id,
-        first_question=first_question,
-        persona_name=persona["name"],
-        opening_line=persona["opening_line"],
-    )
-
-
-@router.websocket("/{interview_id}/session")
-async def interview_session(
-    websocket: WebSocket,
-    interview_id: str,
-):
+# =========================================================
+# Analyze Single Frame
+# =========================================================
+async def analyze_frame(
+    frame_bytes: bytes,
+    mime_type: str = "image/jpeg"
+) -> dict:
     """
-    Real-time interview session.
+    Analyze webcam frame for interview behavior.
     """
-
-    await websocket.accept()
-
-    logger.info(
-        "websocket_connected",
-        interview_id=interview_id,
-    )
-
-    # Load state from Redis
-    state_json = redis_client.get(
-        f"interview_state:{interview_id}"
-    )
-
-    if not state_json:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Interview session not found",
-        })
-
-        await websocket.close()
-
-        return
-
-    interview_state = json.loads(state_json)
 
     try:
 
-        while True:
+        # Encode image
+        frame_b64 = base64.b64encode(
+            frame_bytes
+        ).decode("utf-8")
 
-            data = await websocket.receive()
+        response = await asyncio.to_thread(
+            _generate_content,
 
-            # Binary data (audio/frame)
-            if "bytes" in data:
-
-                binary_data = data["bytes"]
-
-                current_question = (
-                    interview_state["questions"][-1]
-                    if interview_state.get("questions")
-                    else {}
-                )
-
-                # AUDIO
-                result = await transcribe_and_evaluate_with_retry(
-                    audio_bytes=binary_data,
-                    question=current_question.get("text", ""),
-                )
-
-                interview_state["answers"].append({
-                    "transcript": result["transcript"],
-                })
-
-                interview_state["evaluations"].append({
-                    "score": result["score"],
-                    "accuracy_score": result["accuracy_score"],
-                    "clarity_score": result["clarity_score"],
-                    "depth_score": result["depth_score"],
-                    "cot_reasoning": result["cot_reasoning"],
-                })
-
-                interview_state["current_index"] += 1
-
-                # Interview complete
-                if (
-                    interview_state["current_index"]
-                    >= settings.max_questions_per_interview
-                ):
-
-                    from ai.agents.coach import coach_agent
-
-                    interview_state = {
-                        **interview_state,
-                        **coach_agent(interview_state),
+            [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": frame_b64,
                     }
+                },
 
-                    await websocket.send_json({
-                        "type": "interview_complete",
-                        "overall_score": interview_state["report"].get(
-                            "overall_score",
-                            0,
-                        ),
-                        "grade": interview_state["report"].get(
-                            "grade",
-                            "",
-                        ),
-                        "report": interview_state["report"],
-                    })
+                """
+Analyze this image of a candidate during a professional job interview.
 
-                    _save_interview_to_db(
-                        interview_id,
-                        interview_state,
-                    )
+Evaluate:
 
-                    break
+- engagement
+- confidence
+- nervousness
+- professionalism
+- eye contact
+- posture
+- facial expression
+- distraction level
 
-                # Generate next question
-                from ai.agents.retriever import retriever_agent
-                from ai.agents.generator import generator_agent
+Return ONLY valid JSON.
 
-                interview_state = {
-                    **interview_state,
-                    **retriever_agent(interview_state),
-                }
+Example:
 
-                interview_state = {
-                    **interview_state,
-                    **generator_agent(interview_state),
-                }
+{
+    "engagement_score": 82,
+    "confidence_score": 76,
+    "nervousness_score": 25,
+    "professionalism_score": 88,
+    "eye_contact": true,
+    "looking_away": false,
+    "distracted": false,
+    "expression": "focused",
+    "emotion": "confident",
+    "posture": "upright",
+    "confidence_level": "high",
+    "notes": "Candidate appears attentive and confident"
+}
 
-                next_question = (
-                    interview_state["questions"][-1]
-                )
+Rules:
+- scores must be between 0 and 100
+- no markdown
+- no explanation
+- return only JSON
+"""
+            ]
+        )
 
-                # Store question
-                (
-                    supabase
-                    .table("questions")
-                    .insert({
-                        "id": str(uuid.uuid4()),
-                        "interview_id": interview_id,
-                        "text": next_question.get("text", ""),
-                        "category": next_question.get("category", ""),
-                        "topic": next_question.get("topic", ""),
-                        "difficulty": next_question.get(
-                            "difficulty",
-                            "",
-                        ),
-                        "why_asked": next_question.get(
-                            "why_asked",
-                            "",
-                        ),
-                        "is_weakness_focused": next_question.get(
-                            "is_weakness_focused",
-                            False,
-                        ),
-                        "order_idx": interview_state["current_index"],
-                    })
-                    .execute()
-                )
+        raw = response.text.strip()
 
-                # Send response
-                await websocket.send_json({
-                    "type": "next_question",
-                    "question": next_question.get("text", ""),
-                    "question_number": (
-                        interview_state["current_index"] + 1
-                    ),
-                    "topic": next_question.get("topic", ""),
-                    "why_asked": next_question.get(
-                        "why_asked",
-                        "",
-                    ),
-                    "previous_score": result["score"],
-                    "previous_reasoning": result[
-                        "cot_reasoning"
-                    ],
-                })
+        # Remove markdown wrappers
+        if raw.startswith("```"):
 
-            # Text control messages
-            elif "text" in data:
-
-                msg = json.loads(data["text"])
-
-                if msg.get("type") == "ping":
-
-                    await websocket.send_json({
-                        "type": "pong",
-                    })
-
-            # Persist state
-            redis_client.setex(
-                f"interview_state:{interview_id}",
-                7200,
-                json.dumps(interview_state),
+            raw = (
+                raw.replace("```json", "")
+                .replace("```", "")
+                .strip()
             )
 
-    except WebSocketDisconnect:
+        result = json.loads(raw)
+
+        validated = {
+            "engagement_score": int(
+                result.get(
+                    "engagement_score",
+                    50
+                )
+            ),
+
+            "confidence_score": int(
+                result.get(
+                    "confidence_score",
+                    50
+                )
+            ),
+
+            "nervousness_score": int(
+                result.get(
+                    "nervousness_score",
+                    50
+                )
+            ),
+
+            "professionalism_score": int(
+                result.get(
+                    "professionalism_score",
+                    50
+                )
+            ),
+
+            "eye_contact": bool(
+                result.get(
+                    "eye_contact",
+                    True
+                )
+            ),
+
+            "looking_away": bool(
+                result.get(
+                    "looking_away",
+                    False
+                )
+            ),
+
+            "distracted": bool(
+                result.get(
+                    "distracted",
+                    False
+                )
+            ),
+
+            "expression": str(
+                result.get(
+                    "expression",
+                    "neutral"
+                )
+            ),
+
+            "emotion": str(
+                result.get(
+                    "emotion",
+                    "neutral"
+                )
+            ),
+
+            "posture": str(
+                result.get(
+                    "posture",
+                    "upright"
+                )
+            ),
+
+            "confidence_level": str(
+                result.get(
+                    "confidence_level",
+                    "medium"
+                )
+            ),
+
+            "notes": str(
+                result.get(
+                    "notes",
+                    ""
+                )
+            ),
+        }
 
         logger.info(
-            "websocket_disconnected",
-            interview_id=interview_id,
+            "frame_analyzed",
+            engagement=validated[
+                "engagement_score"
+            ],
+            confidence=validated[
+                "confidence_score"
+            ],
+            emotion=validated[
+                "emotion"
+            ],
         )
 
-        _save_interview_to_db(
-            interview_id,
-            interview_state,
-            status="aborted",
+        return validated
+
+    except json.JSONDecodeError:
+
+        logger.warning(
+            "behavior_parse_failed"
         )
+
+        return DEFAULT_RESPONSE
 
     except Exception as e:
 
-        logger.error(
-            "websocket_error",
-            interview_id=interview_id,
-            error=str(e),
+        logger.exception(
+            "behavior_analysis_failed",
+            error=str(e)
         )
 
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": str(e),
-            })
-        except Exception:
-            pass
+        return {
+            **DEFAULT_RESPONSE,
+            "notes": str(e),
+        }
 
 
-def _save_interview_to_db(
-    interview_id: str,
-    state: dict,
-    status: str = "completed",
-):
+# =========================================================
+# Aggregate Interview Behavior
+# =========================================================
+def aggregate_behavior_analysis(
+    frames: list[dict]
+) -> dict:
     """
-    Save final interview state.
+    Aggregate multiple frame analyses
+    into final interview behavior analytics.
     """
 
-    report = state.get("report", {})
+    if not frames:
 
-    # Update interview
-    (
-        supabase
-        .table("interviews")
-        .update({
-            "status": status,
-            "overall_score": report.get(
-                "overall_score"
+        return {
+            "overall_engagement": 0,
+            "overall_confidence": 0,
+            "overall_professionalism": 0,
+            "overall_nervousness": 0,
+            "eye_contact_ratio": 0,
+            "distraction_ratio": 0,
+            "dominant_emotion": "neutral",
+            "behavior_summary": (
+                "No behavior data available"
             ),
-            "completed_at": "now()",
-        })
-        .eq("id", interview_id)
-        .execute()
+        }
+
+    eye_contact_ratio = (
+        sum(
+            1 for f in frames
+            if f.get("eye_contact")
+        ) / len(frames)
     )
 
-    # Save answers
-    for i, (q, a, e) in enumerate(
-        zip(
-            state.get("questions", []),
-            state.get("answers", []),
-            state.get("evaluations", []),
-        )
-    ):
-
-        q_result = (
-            supabase
-            .table("questions")
-            .select("id")
-            .eq("interview_id", interview_id)
-            .eq("order_idx", i)
-            .execute()
-        )
-
-        if q_result.data:
-
-            (
-                supabase
-                .table("answers")
-                .upsert({
-                    "question_id": q_result.data[0]["id"],
-                    "answer_text": a.get("transcript", ""),
-                    "score": e.get("score", 0),
-                    "accuracy_score": e.get(
-                        "accuracy_score",
-                        0,
-                    ),
-                    "clarity_score": e.get(
-                        "clarity_score",
-                        0,
-                    ),
-                    "depth_score": e.get(
-                        "depth_score",
-                        0,
-                    ),
-                    "cot_reasoning": e.get(
-                        "cot_reasoning",
-                        "",
-                    ),
-                })
-                .execute()
-            )
-
-    # Save report
-    (
-        supabase
-        .table("reports")
-        .upsert({
-            "interview_id": interview_id,
-            "overall_score": report.get(
-                "overall_score",
-                0,
-            ),
-            "grade": report.get("grade", ""),
-            "interview_readiness": report.get(
-                "interview_readiness",
-                "not_ready",
-            ),
-            "feedback_json": report.get(
-                "per_topic_feedback",
-                {},
-            ),
-            "improvement_plan": report.get(
-                "improvement_plan",
-                [],
-            ),
-            "speech_summary": report.get(
-                "speech_summary",
-                {},
-            ),
-            "strengths": report.get(
-                "strengths_to_highlight",
-                [],
-            ),
-            "next_session_focus": report.get(
-                "next_session_focus",
-                [],
-            ),
-        })
-        .execute()
+    distraction_ratio = (
+        sum(
+            1 for f in frames
+            if f.get("distracted")
+        ) / len(frames)
     )
 
-    logger.info(
-        "interview_saved_to_db",
-        interview_id=interview_id,
-        status=status,
+    emotions = [
+        f.get("emotion", "neutral")
+        for f in frames
+    ]
+
+    dominant_emotion = max(
+        set(emotions),
+        key=emotions.count
     )
+
+    return {
+
+        "overall_engagement": round(
+            mean(
+                f.get(
+                    "engagement_score",
+                    50
+                )
+                for f in frames
+            ),
+            2,
+        ),
+
+        "overall_confidence": round(
+            mean(
+                f.get(
+                    "confidence_score",
+                    50
+                )
+                for f in frames
+            ),
+            2,
+        ),
+
+        "overall_professionalism": round(
+            mean(
+                f.get(
+                    "professionalism_score",
+                    50
+                )
+                for f in frames
+            ),
+            2,
+        ),
+
+        "overall_nervousness": round(
+            mean(
+                f.get(
+                    "nervousness_score",
+                    50
+                )
+                for f in frames
+            ),
+            2,
+        ),
+
+        "eye_contact_ratio": round(
+            eye_contact_ratio * 100,
+            2,
+        ),
+
+        "distraction_ratio": round(
+            distraction_ratio * 100,
+            2,
+        ),
+
+        "dominant_emotion": dominant_emotion,
+
+        "behavior_summary": (
+            f"Candidate showed "
+            f"{dominant_emotion} behavior "
+            f"with "
+            f"{round(eye_contact_ratio * 100)}% "
+            f"eye contact consistency."
+        ),
+    }

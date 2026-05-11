@@ -17,6 +17,22 @@ logger = get_logger("resume_routes")
 router = APIRouter()
 
 
+@router.get("")
+@router.get("/")
+async def list_resumes(user: dict = Depends(get_current_user)):
+    """List resumes uploaded by the current user."""
+    result = (
+        supabase
+        .table("resumes")
+        .select("id, file_name, parsed_json, created_at")
+        .eq("user_id", user["sub"])
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return {"resumes": result.data or []}
+
+
 @router.post("/upload")
 async def upload_resume(
     file: UploadFile = File(...),
@@ -74,7 +90,11 @@ async def upload_resume(
         else:
             section_tags.append("general")
 
-    stored = embed_and_store(resume_id, chunks, section_tags)
+    try:
+        stored = embed_and_store(resume_id, chunks, section_tags)
+    except Exception as e:
+        logger.error("resume_embedding_failed", resume_id=resume_id, error=str(e))
+        stored = 0
 
     logger.info("resume_uploaded", resume_id=resume_id, chunks_stored=stored, user_id=user_id)
 

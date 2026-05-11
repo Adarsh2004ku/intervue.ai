@@ -1,5 +1,6 @@
 import io
 import json
+import re
 from typing import Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -21,6 +22,44 @@ class ParsedResume(BaseModel):
     education: list[str] = Field(default_factory=list)
     projects: list[str] = Field(default_factory=list)
     summary: str = ""
+
+
+def _extract_section(raw_text: str, names: list[str]) -> list[str]:
+    labels = ["experience", "skills", "education", "projects", "summary"]
+    pattern = "|".join(re.escape(label) for label in labels)
+    for name in names:
+      match = re.search(
+          rf"{name}\s*:?\s*(.*?)(?=\n\s*(?:{pattern})\s*:|\Z)",
+          raw_text,
+          flags=re.IGNORECASE | re.DOTALL,
+      )
+      if match:
+          lines = [
+              re.sub(r"^[\-\*\u2022]\s*", "", line.strip())
+              for line in match.group(1).splitlines()
+              if line.strip()
+          ]
+          return lines
+    return []
+
+
+def _heuristic_parse(raw_text: str) -> ParsedResume:
+    skills = []
+    skill_lines = _extract_section(raw_text, ["skills", "technical skills"])
+    for line in skill_lines:
+        skills.extend([item.strip() for item in re.split(r",|\|", line) if item.strip()])
+
+    experience = _extract_section(raw_text, ["experience", "work experience", "employment"])
+    education = _extract_section(raw_text, ["education"])
+    projects = _extract_section(raw_text, ["projects", "project"])
+
+    return ParsedResume(
+        experience=experience[:8],
+        skills=skills[:30],
+        education=education[:6],
+        projects=projects[:8],
+        summary=" ".join(raw_text.split())[:500],
+    )
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
@@ -96,5 +135,4 @@ Return ONLY the JSON object, no markdown, no explanation."""
 
     except (json.JSONDecodeError, Exception) as e:
         logger.error("resume_classification_failed", error=str(e))
-        # Fallback: return raw text as summary
-        return ParsedResume(summary=raw_text[:500])
+        return _heuristic_parse(raw_text)

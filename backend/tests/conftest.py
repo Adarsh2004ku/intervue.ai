@@ -9,12 +9,6 @@ from unittest.mock import patch, MagicMock
 
 # Patch settings before importing app
 import os
-os.environ.setdefault("GOOGLE_API_KEY", "AIzaSyCQKU6CXHIQPxCZi4wy5EX7_Th_sjcIjWQ")
-os.environ.setdefault("SUPABASE_URL", "https://sofxdoyoysofhdpzqnzr.supabase.co")
-os.environ.setdefault("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvZnhkb3lveXNvZmhkcHpxbnpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTA3NzUsImV4cCI6MjA5MzgyNjc3NX0.xacy1tfdWNY86UhoRJ7PtJWs5omI55-UoIdkwNiuvxU")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvZnhkb3lveXNvZmhkcHpxbnpyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODI1MDc3NSwiZXhwIjoyMDkzODI2Nzc1fQ.TKdGHmSxPYxFFTNcr-FRcPGlvjvM2kENkWWRnC9lobw")
-os.environ.setdefault("JWT_SECRET", "test-secret-32-characters-minimum")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 @pytest.fixture
 def client():

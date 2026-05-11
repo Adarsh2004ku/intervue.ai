@@ -1,19 +1,33 @@
 """
 Authentication routes:
 - POST /signup — Register new user
-- POST /login — Login and get JWT token
+- POST /login — Login with email/password and get JWT token
+- POST /supabase-session — Exchange Supabase access token for app JWT (used by frontend OAuth)
+- GET /google — Get Google OAuth authorization URL
+- GET /callback — Handle OAuth callback from Google (server-side flow)
 - GET /me — Get current user profile
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
-from backend.core.security import hash_password, verify_password, create_access_token, decode_access_token, get_current_user
+from backend.core.security import create_access_token, get_current_user
 from backend.db.session import supabase
 from backend.core.logging import get_logger
 
 logger = get_logger("auth")
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# TODO: Move this to backend/core/config.py as a proper setting
+#   FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# ---------------------------------------------------------------------------
+FRONTEND_URL = "http://localhost:3000"
+
+
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
 
 class SignupRequest(BaseModel):
     email: EmailStr
@@ -26,6 +40,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SupabaseSessionRequest(BaseModel):
+    access_token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -33,81 +51,282 @@ class TokenResponse(BaseModel):
     email: str
 
 
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def _upsert_user(auth_user, full_name: str = ""):
+    """Create or update the local users table row from a Supabase auth user."""
+    email = auth_user.email or ""
+    metadata = auth_user.user_metadata or {}
+    name = full_name or metadata.get("full_name") or metadata.get("name") or ""
+
+    supabase.table("users").upsert({
+        "id": auth_user.id,
+        "email": email,
+        "hashed_password": "",
+        "full_name": name,
+        # Uncomment once you add an avatar_url column to the users table:
+        # "avatar_url": metadata.get("avatar_url") or metadata.get("picture") or "",
+    }).execute()
+
+
+# ---------------------------------------------------------------------------
+# Email / Password
+# ---------------------------------------------------------------------------
+
 @router.post("/signup", response_model=TokenResponse)
 async def signup(req: SignupRequest):
-    """Register a new user."""
+    """Register a new user through Supabase Auth and mirror the profile."""
     try:
-        # Check if user already exists
-        existing = supabase.table("users").select("id").eq("email", req.email).execute()
-        if existing.data:
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        hashed = hash_password(req.password)
-        
-        # Insert user
-        result = supabase.table("users").insert({
+        auth_response = supabase.auth.admin.create_user({
             "email": req.email,
-            "hashed_password": hashed,
+            "password": req.password,
+            "email_confirm": True,
+            "user_metadata": {
+                "full_name": req.full_name,
+            },
+        })
+
+        if not auth_response.user:
+            raise HTTPException(status_code=500, detail="Failed to create Supabase auth user")
+
+        auth_user = auth_response.user
+
+        result = supabase.table("users").upsert({
+            "id": auth_user.id,
+            "email": auth_user.email or req.email,
+            "hashed_password": "",
             "full_name": req.full_name,
         }).execute()
 
         if not result.data:
-            logger.error("signup_insert_failed", email=req.email, error=result.error)
-            raise HTTPException(status_code=500, detail="Failed to create user in database")
+            logger.error("signup_profile_upsert_failed", email=req.email)
 
-        user = result.data[0]
-        token = create_access_token({"sub": user["id"], "email": user["email"]})
+        token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
 
         logger.info("user_signed_up", email=req.email)
         return TokenResponse(
             access_token=token,
-            user_id=user["id"],
-            email=user["email"],
+            user_id=auth_user.id,
+            email=auth_user.email or req.email,
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error("signup_exception", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        message = str(e)
+        if "already registered" in message.lower() or "already exists" in message.lower():
+            raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {message}")
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest):
-    """Login and receive a JWT token."""
+    """Login with Supabase Auth and receive an app JWT token."""
     try:
-        result = supabase.table("users").select("*").eq("email", req.email).execute()
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": req.email,
+            "password": req.password,
+        })
 
-        if not result.data:
+        if not auth_response.user:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        user = result.data[0]
+        auth_user = auth_response.user
+        profile = supabase.table("users").select("*").eq("id", auth_user.id).execute()
+        if not profile.data:
+            supabase.table("users").upsert({
+                "id": auth_user.id,
+                "email": auth_user.email or req.email,
+                "hashed_password": "",
+                "full_name": (auth_user.user_metadata or {}).get("full_name", ""),
+            }).execute()
 
-        # Verify password (won't crash now thanks to the security.py update)
-        if not verify_password(req.password, user.get("hashed_password", "")):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        token = create_access_token({"sub": user["id"], "email": user["email"]})
+        token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
 
         logger.info("user_logged_in", email=req.email)
         return TokenResponse(
             access_token=token,
-            user_id=user["id"],
-            email=user["email"],
+            user_id=auth_user.id,
+            email=auth_user.email or req.email,
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error("login_exception", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
+
+# ---------------------------------------------------------------------------
+# Supabase session exchange  (used by FRONTEND-driven Google OAuth)
+# ---------------------------------------------------------------------------
+
+@router.post("/supabase-session", response_model=TokenResponse)
+async def login_with_supabase_session(req: SupabaseSessionRequest):
+    """Exchange a Supabase Auth access token for this API's JWT.
+
+    This is the primary endpoint for **frontend-driven** OAuth flows:
+      1. Frontend calls `supabase.auth.signInWithOAuth({ provider: 'google' })`
+      2. After redirect back, the frontend has a Supabase access_token
+      3. Frontend sends that token here → receives the app JWT
+    """
+    try:
+        user_response = supabase.auth.get_user(req.access_token)
+        auth_user = user_response.user if user_response else None
+
+        if not auth_user:
+            raise HTTPException(status_code=401, detail="Invalid Supabase session")
+
+        _upsert_user(auth_user)
+
+        email = auth_user.email or ""
+        token = create_access_token({"sub": auth_user.id, "email": email})
+
+        logger.info("user_supabase_session_login", email=email)
+        return TokenResponse(
+            access_token=token,
+            user_id=auth_user.id,
+            email=email,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("supabase_session_login_exception", error=str(e))
+        raise HTTPException(status_code=401, detail="Invalid Supabase session")
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth  (SERVER-SIDE redirect flow)
+# ---------------------------------------------------------------------------
+
+@router.get("/google")
+async def google_oauth(request: Request):
+    """Get the Google OAuth authorization URL.
+
+    **Server-side flow:**  Frontend navigates to this endpoint (or uses the
+    returned URL to redirect).  After the user authenticates with Google,
+    Supabase redirects to ``/auth/callback`` which exchanges the code and
+    redirects the user back to the frontend with the app JWT.
+
+    **Frontend-driven flow (simpler for SPAs):**
+    Use the Supabase JS client on the frontend instead::
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.origin + '/auth/callback' }
+        });
+
+    Then send the resulting ``access_token`` to ``POST /supabase-session``.
+    """
+    callback_url = str(request.base_url).rstrip("/") + "/auth/callback"
+
+    try:
+        response = supabase.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": {
+                "redirect_to": callback_url,
+            },
+        })
+        return {"url": response.url}
+    except Exception as e:
+        logger.error("google_oauth_url_error", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate Google OAuth URL",
+        )
+
+
+@router.get("/callback")
+async def oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    error_description: str = Query(None),
+):
+    """Handle the OAuth callback from Google (via Supabase).
+
+    Supabase redirects here with ``?code=<auth_code>`` after a successful
+    Google sign-in.  This endpoint:
+
+    1. Exchanges the code for a Supabase session
+    2. Upserts the user into the local ``users`` table
+    3. Creates an app JWT
+    4. Redirects to the frontend with ``access_token``, ``user_id``, and
+       ``email`` as query parameters
+
+    **Important — Supabase dashboard setup:**
+    Add your callback URL (e.g. ``https://api.yourdomain.com/auth/callback``)
+    to **Authentication → URL Configuration → Redirect URLs** in the
+    Supabase dashboard.
+    """
+    if error:
+        logger.warning("oauth_error", error=error, description=error_description)
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/login?error=oauth_failed"
+        )
+
+    if not code:
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/login?error=missing_code"
+        )
+
+    try:
+        # Exchange the authorization code for a Supabase session.
+        # NOTE: If you run multiple workers, PKCE state may not be shared.
+        # In that case prefer the frontend-driven flow (POST /supabase-session).
+        auth_response = supabase.auth.exchange_code_for_session({"code": code})
+
+        # Handle different supabase-py response shapes
+        auth_user = getattr(auth_response, "user", None)
+        if auth_user is None:
+            session = getattr(auth_response, "session", None)
+            if session:
+                auth_user = getattr(session, "user", None)
+
+        if not auth_user:
+            return RedirectResponse(
+                url=f"{FRONTEND_URL}/login?error=auth_failed"
+            )
+
+        _upsert_user(auth_user)
+
+        email = auth_user.email or ""
+        token = create_access_token({"sub": auth_user.id, "email": email})
+
+        logger.info("google_oauth_success", email=email)
+
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/auth/callback?access_token={token}&user_id={auth_user.id}&email={email}"
+        )
+    except Exception as e:
+        logger.error("google_oauth_callback_error", error=str(e))
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/login?error=oauth_failed"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
 
 @router.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):
     """Get current user profile."""
     result = supabase.table("users").select("*").eq("id", user["sub"]).execute()
     if not result.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    
+        email = user.get("email", "")
+        created = supabase.table("users").upsert({
+            "id": user["sub"],
+            "email": email,
+            "hashed_password": "",
+            "full_name": "",
+        }).execute()
+
+        if not created.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        result = created
+
     u = result.data[0]
     return {
         "id": u["id"],
