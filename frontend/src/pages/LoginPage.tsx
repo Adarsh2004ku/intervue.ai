@@ -93,22 +93,19 @@ const LoginPage: React.FC = () => {
   };
 
   const handleGoogleLogin = async () => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-
-    if (!supabaseUrl) {
-      setError('VITE_SUPABASE_URL is missing in frontend/.env');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
-    const redirectTo = `${window.location.origin}/login`;
-    const url = new URL(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/authorize`);
-    url.searchParams.set('provider', 'google');
-    url.searchParams.set('redirect_to', redirectTo);
-
-    window.location.href = url.toString();
+    try {
+      const result = await api.auth.google();
+      if (!result.url) {
+        throw new Error('Missing Google OAuth URL');
+      }
+      window.location.href = result.url;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to start Google login through the backend.');
+      setLoading(false);
+    }
   };
 
   // ── Animation variants ────────────────────────────────────────────

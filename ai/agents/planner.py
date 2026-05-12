@@ -1,9 +1,9 @@
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.core.config import settings
 from backend.db.session import supabase
 from ai.personas.interviewer_personas import get_persona
 from ai.agents.state import InterviewState
+from backend.services.llm.provider import get_gemini_direct, parse_llm_json
 from backend.core.logging import get_logger
 
 """
@@ -66,6 +66,7 @@ def planner_agent(state: InterviewState) -> dict:
     """
     user_id = state.get("user_id", "")
     job_role = state.get("job_role", "")
+    job_description = state.get("job_description", "")
     interview_mode = state.get("interview_mode", "faang")
     resume_summary = state.get("resume_summary", {})
 
@@ -76,11 +77,13 @@ def planner_agent(state: InterviewState) -> dict:
 
     persona = get_persona(interview_mode)
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.2)
+    llm = get_gemini_direct(temperature=0.2)
 
 
     prompt = f"""You are an interview planner for {persona['name']}.
     Job Role: {job_role}
+    Job Description:
+    {job_description[:3000] if job_description else "No detailed job description provided."}
     Interview Mode: {interview_mode} ({persona['style']})
     Candidate's Weak Topics: {weak_topics if weak_topics else 'None detected yet'}
     Candidate's Strong Topics: {strong_topics if strong_topics else 'None detected yet'}
@@ -90,10 +93,11 @@ def planner_agent(state: InterviewState) -> dict:
     Create an interview plan for {settings.max_questions_per_interview} questions.
 
     Rules:
-    1. Allocate 60% of questions to weak topics (if any exist)
-    2. Allocate 30% to new/untested topics from the job role
-    3. Allocate 10% to strong topics (confirmation)
-    4. Adjust difficulty based on the candidate's profile
+    1. The first question must be a brief introduction prompt.
+    2. The second and third questions should come from the candidate's projects or shipped work.
+    3. Later questions should connect resume evidence to the job role and job description.
+    4. Allocate weak-topic questions after the project/resume grounding questions.
+    5. Adjust difficulty based on the candidate's profile.
 
     Return ONLY valid JSON:
     {{
@@ -106,15 +110,7 @@ def planner_agent(state: InterviewState) -> dict:
 
     try:
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```"):
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1]
-            if content.startswith("json"):
-                content = content[4:]
-
-        plan_data = json.loads(content.strip())
+        plan_data = parse_llm_json(response.content)
 
         logger.info(
             "interview_planned",
@@ -144,8 +140,10 @@ def planner_agent(state: InterviewState) -> dict:
         return {
             "difficulty": "medium",
             "interview_plan": [
-                {"category": "Technical", "topic": job_role, "count": 5, "difficulty": "medium", "focus": "general"},
-                {"category": "HR", "topic": "Behavioural", "count": 3, "difficulty": "easy", "focus": "STAR method"},
+                {"category": "Intro", "topic": "Candidate introduction", "count": 1, "difficulty": "easy", "focus": "brief background and target role"},
+                {"category": "Projects", "topic": "Resume projects", "count": 2, "difficulty": "medium", "focus": "project ownership, architecture, impact, and trade-offs"},
+                {"category": "Role Fit", "topic": job_role, "count": 3, "difficulty": "medium", "focus": "job description alignment"},
+                {"category": "Technical", "topic": job_role, "count": 4, "difficulty": "medium", "focus": "core skills and problem solving"},
             ],
             "weak_topics": weak_topics,
             "strong_topics": strong_topics,

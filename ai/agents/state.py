@@ -1,4 +1,4 @@
-from typing import TypedDict,List,Optional,Dict,Any
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 """
 InterviewState — shared memory across all LangGraph agents.
 This TypedDict defines every field that flows through the interview.
@@ -10,6 +10,8 @@ class InterviewState(TypedDict):
     user_id: str                      # Candidate's Supabase user ID
     resume_id: str                    # Which resume to use for retrieval
     job_role: str                     # e.g., "Software Engineer at Google"
+    job_description: NotRequired[str] # Optional JD pasted by the candidate
+    resume_summary: NotRequired[Dict[str, Any]]
 
     # --- Planner output ---
     difficulty: str                   # 'easy', 'medium', or 'hard'

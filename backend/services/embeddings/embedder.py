@@ -1,4 +1,3 @@
-import google.genai as genai
 from google.genai import types
 import google.genai as genai
 
@@ -13,7 +12,7 @@ _client = genai.Client(
 )
 
 
-def embed_texts(text: str) -> list[float]:
+def embed_query(text: str) -> list[float]:
     """Embed a single text string into a 768-dim vector."""
 
     model_name = settings.embedding_model.replace("models/", "")
@@ -27,6 +26,11 @@ def embed_texts(text: str) -> list[float]:
     )
 
     return response.embeddings[0].values
+
+
+def embed_texts(text: str) -> list[float]:
+    """Backward-compatible alias for single-text embedding."""
+    return embed_query(text)
 
 
 def embed_text(texts: list[str]) -> list[list[float]]:

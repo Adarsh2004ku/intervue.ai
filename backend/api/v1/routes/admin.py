@@ -6,23 +6,24 @@ Admin routes:
 """
 
 from datetime import date
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from backend.db.session import supabase, redis_client
 from backend.core.logging import get_logger
+from backend.core.security import get_current_user
 
 logger = get_logger("admin_routes")
 router = APIRouter()
 
 
 @router.get("/dashboard")
-async def admin_dashboard():
+async def admin_dashboard(_user: dict = Depends(get_current_user)):
     """Get admin dashboard KPIs."""
     # Total interviews
     interviews = supabase.table("interviews").select("id, status, overall_score").execute()
     total_interviews = len(interviews.data) if interviews.data else 0
     completed = [i for i in (interviews.data or []) if i.get("status") == "completed"]
     avg_score = (
-        sum(i.get("overall_score", 0) for i in completed) / len(completed)
+        sum(i.get("overall_score") or 0 for i in completed) / len(completed)
         if completed else 0
     )
 
@@ -45,7 +46,7 @@ async def admin_dashboard():
 
 
 @router.get("/costs")
-async def get_costs(days: int = 7):
+async def get_costs(days: int = 7, _user: dict = Depends(get_current_user)):
     """Get LLM cost breakdown for the last N days."""
     from datetime import timedelta
     start_date = str(date.today() - timedelta(days=days))
@@ -71,7 +72,7 @@ async def get_costs(days: int = 7):
 
 
 @router.get("/metrics")
-async def get_metrics():
+async def get_metrics(_user: dict = Depends(get_current_user)):
     """Get system-level metrics for monitoring."""
     metrics = {"status": "ok"}
 

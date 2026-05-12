@@ -42,6 +42,26 @@ DEFAULT_RESPONSE = {
 }
 
 
+def _clamp_score(value, default: int = 50) -> int:
+    try:
+        score = int(value)
+    except (TypeError, ValueError):
+        score = default
+    return max(0, min(100, score))
+
+
+def _as_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1"}:
+            return True
+        if lowered in {"false", "no", "0"}:
+            return False
+    return default
+
+
 # =========================================================
 # Internal Sync Function
 # =========================================================
@@ -151,9 +171,9 @@ Rules:
             else "{}"
         )
 
-        logger.info(
+        logger.debug(
             "vision_raw_response",
-            raw=raw
+            raw_preview=raw[:500],
         )
 
         # =================================================
@@ -190,49 +210,50 @@ Rules:
         # =================================================
         validated = {
 
-            "engagement_score": int(
+            "engagement_score": _clamp_score(
                 result.get(
                     "engagement_score",
                     50
                 )
             ),
 
-            "confidence_score": int(
+            "confidence_score": _clamp_score(
                 result.get(
                     "confidence_score",
                     50
                 )
             ),
 
-            "nervousness_score": int(
+            "nervousness_score": _clamp_score(
                 result.get(
                     "nervousness_score",
                     50
                 )
             ),
 
-            "professionalism_score": int(
+            "professionalism_score": _clamp_score(
                 result.get(
                     "professionalism_score",
                     50
                 )
             ),
 
-            "eye_contact": bool(
+            "eye_contact": _as_bool(
                 result.get(
                     "eye_contact",
                     True
-                )
+                ),
+                True,
             ),
 
-            "looking_away": bool(
+            "looking_away": _as_bool(
                 result.get(
                     "looking_away",
                     False
                 )
             ),
 
-            "distracted": bool(
+            "distracted": _as_bool(
                 result.get(
                     "distracted",
                     False

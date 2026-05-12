@@ -34,7 +34,6 @@ To point the frontend at another backend, set:
 ```bash
 VITE_API_BASE_URL=https://your-api.example.com/api/v1
 VITE_WS_BASE_URL=wss://your-api.example.com/api/v1
-VITE_SUPABASE_URL=https://your-project.supabase.co
 ```
 
 ## Scripts
@@ -67,16 +66,30 @@ frontend/
 
 ## Backend Integration
 
-The frontend API client lives in `src/services/api.ts` and connects to:
+The frontend API client lives in `src/services/api.ts`. Database access stays behind FastAPI; the browser talks to the backend, and the backend talks to Supabase/Postgres.
+
+Current backend routes used by the UI:
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/signup`
 - `POST /api/v1/auth/supabase-session`
+- `GET /api/v1/auth/google`
 - `GET /api/v1/auth/me`
 - `GET /api/v1/resume`
 - `POST /api/v1/resume/upload`
-- `GET /api/v1/interview/dashboard`
-- `GET /api/v1/interview/history`
-- `POST /api/v1/interview/start`
-- `GET /api/v1/interview/{id}/status`
-- `WS /api/v1/interview/{id}/session`
+- `GET /api/v1/resume/{resume_id}`
+- `DELETE /api/v1/resume/{resume_id}`
+- `GET /api/v1/interview/interview/health`
+- `GET /api/v1/interview/interview/history`
+- `GET /api/v1/interview/interview/{interview_id}/status`
+- `POST /api/v1/interview/interview/start`
+- `POST /api/v1/interview/interview/analyze-frame`
+- `POST /api/v1/interview/interview/analyze-audio`
+- `GET /api/v1/interview/interview/behavior-summary/{interview_id}`
+- `POST /api/v1/interview/interview/{interview_id}/complete`
+- `WS /api/v1/interview/interview/ws/interview/{interview_id}`
+- `GET /api/v1/report/{interview_id}`
+- `GET /api/v1/report/{interview_id}/pdf`
+- `GET /api/v1/admin/dashboard`
+- `GET /api/v1/admin/costs`
+- `GET /api/v1/admin/metrics`

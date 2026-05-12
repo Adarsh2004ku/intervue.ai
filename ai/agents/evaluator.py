@@ -1,8 +1,7 @@
 import json
 from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
-from backend.core.config import settings
 from ai.agents.state import InterviewState
+from backend.services.llm.provider import get_gemini_direct, parse_llm_json
 from backend.core.logging import get_logger
 
 """
@@ -38,7 +37,7 @@ def evaluator_agent(state: InterviewState) -> dict:
     current_question = questions[-1]
     current_answer = answers[-1]
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.1)
+    llm = get_gemini_direct(temperature=0.1)
 
     prompt = f"""You are an expert interview evaluator. Evaluate this answer carefully.
 
@@ -67,15 +66,7 @@ def evaluator_agent(state: InterviewState) -> dict:
 
     try:
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```"):
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1]
-            if content.startswith("json"):
-                content = content[4:]
-
-        eval_data = json.loads(content.strip())
+        eval_data = parse_llm_json(response.content)
 
         # Clamp scores to 0-100
         for key in ["score", "accuracy_score", "clarity_score", "depth_score"]:

@@ -1,9 +1,8 @@
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
-from backend.core.config import settings
 from backend.db.session import supabase
 from ai.agents.state import InterviewState
 from backend.core.logging import get_logger
+from backend.services.llm.provider import get_gemini_direct, parse_llm_json
 
 logger = get_logger("coach_agent")
 
@@ -65,7 +64,7 @@ def coach_agent(state: InterviewState) -> dict:
     avg_clarity = sum(e.get("clarity_score", 0) for e in evaluations) / len(evaluations)
     avg_depth = sum(e.get("depth_score", 0) for e in evaluations) / len(evaluations)
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.3)
+    llm = get_gemini_direct(temperature=0.3)
 
     # Build detailed Q&A summary for the LLM
     qa_summary = ""
@@ -102,15 +101,7 @@ def coach_agent(state: InterviewState) -> dict:
 
     try:
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```"):
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1]
-            if content.startswith("json"):
-                content = content[4:]
-
-        report = json.loads(content.strip())
+        report = parse_llm_json(response.content)
         report["overall_score"] = int(avg_score)
         report["grade"] = (
             "A" if avg_score >= 85 else

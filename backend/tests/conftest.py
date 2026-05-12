@@ -6,6 +6,7 @@ Provides test client, mock database, and mock LLM responses.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
+from contextlib import ExitStack
 
 # Patch settings before importing app
 import os
@@ -19,15 +20,45 @@ def client():
 @pytest.fixture
 def mock_supabase():
     """Mock Supabase client for testing."""
-    with patch("backend.db.session.supabase") as mock_sb:
-        # Flexible mock that handles both .eq() and non-.eq() chains
-        mock_execute = MagicMock(data=[])
-        mock_insert_execute = MagicMock(data=[{"id": "test-uuid", "email": "test@test.com"}])
-        
-        mock_sb.table.return_value.select.return_value.execute.return_value = mock_execute
-        mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_execute
-        mock_sb.table.return_value.insert.return_value.execute.return_value = mock_insert_execute
-        mock_sb.table.return_value.delete.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    mock_sb = MagicMock()
+    table = mock_sb.table.return_value
+    for method in [
+        "select",
+        "insert",
+        "upsert",
+        "delete",
+        "update",
+        "eq",
+        "lt",
+        "gte",
+        "order",
+        "limit",
+        "single",
+        "in_",
+    ]:
+        getattr(table, method).return_value = table
+    table.execute.return_value = MagicMock(data=[])
+
+    auth_user = MagicMock(id="test-user-id", email="test@test.com", user_metadata={"full_name": "Test User"})
+    mock_sb.auth.admin.create_user.return_value = MagicMock(user=auth_user)
+    mock_sb.auth.sign_in_with_password.return_value = MagicMock(user=auth_user)
+    mock_sb.auth.get_user.return_value = MagicMock(user=auth_user)
+
+    patch_targets = [
+        "backend.db.session.supabase",
+        "backend.api.v1.routes.auth.supabase",
+        "backend.api.v1.routes.resume.supabase",
+        "backend.api.v1.routes.admin.supabase",
+        "backend.api.v1.routes.report.supabase",
+        "backend.services.cost_tracking.supabase",
+        "backend.services.interview_agent_flow.supabase",
+        "ai.agents.planner.supabase",
+        "ai.agents.coach.supabase",
+    ]
+
+    with ExitStack() as stack:
+        for target in patch_targets:
+            stack.enter_context(patch(target, mock_sb))
         yield mock_sb
 
 

@@ -341,6 +341,11 @@
   transform: scale(1.1);
 }
 
+.controlBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .controlBtn.active {
   background: rgba(239, 68, 68, 0.2);
   border-color: #ef4444;
@@ -360,6 +365,12 @@
 
 .answerAction:hover {
   box-shadow: 0 0 24px rgba(16, 185, 129, 0.3);
+}
+
+.answerAction:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .mediaNotice {

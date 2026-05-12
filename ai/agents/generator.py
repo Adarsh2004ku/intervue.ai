@@ -1,9 +1,9 @@
 import random
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.core.config import settings
 from ai.personas.interviewer_personas import get_persona
 from ai.agents.state import InterviewState
+from backend.services.llm.provider import get_gemini_direct, parse_llm_json
 from backend.core.logging import get_logger
 
 logger = get_logger("generator_agent")
@@ -36,6 +36,83 @@ def _get_next_topic(state: InterviewState) -> dict:
     return {"category": "General", "topic": state.get("job_role", ""), "difficulty": "medium", "focus": "general"}
 
 
+def fallback_question_for_index(
+    state: InterviewState,
+    questions: list[dict],
+    reason: str = "Fallback question due to generation error",
+) -> dict:
+    """Build a deterministic non-repeating fallback question."""
+    job_role = state.get("job_role", "this role") or "this role"
+    order_idx = len(questions)
+    templates = [
+        {
+            "text": (
+                "Give me a brief introduction, focusing on your background, strongest project, "
+                "and why this role is a fit."
+            ),
+            "category": "Intro",
+            "topic": "Candidate introduction",
+            "difficulty": "easy",
+        },
+        {
+            "text": (
+                "Walk me through a project from your resume that best demonstrates your fit for "
+                f"{job_role}. What did you own, and what trade-offs did you make?"
+            ),
+            "category": "Projects",
+            "topic": "Resume projects",
+            "difficulty": "medium",
+        },
+        {
+            "text": (
+                "Pick a technical decision from one of your projects. What alternatives did you consider, "
+                "and how did you validate the choice?"
+            ),
+            "category": "Projects",
+            "topic": "Technical decisions",
+            "difficulty": "medium",
+        },
+        {
+            "text": (
+                "Tell me about a difficult bug, production issue, or edge case you handled. "
+                "How did you isolate the root cause?"
+            ),
+            "category": "Technical",
+            "topic": "Debugging",
+            "difficulty": "medium",
+        },
+        {
+            "text": (
+                f"Imagine a system relevant to {job_role} has to support significantly more users. "
+                "What would you measure first, and what would you change?"
+            ),
+            "category": "Technical",
+            "topic": "Scalability",
+            "difficulty": "medium",
+        },
+        {
+            "text": (
+                "Describe a time you worked with teammates or stakeholders under ambiguity. "
+                "How did you keep the work moving?"
+            ),
+            "category": "Behavioral",
+            "topic": "Collaboration",
+            "difficulty": "medium",
+        },
+    ]
+
+    question = templates[order_idx % len(templates)].copy()
+    if order_idx >= len(templates):
+        question["text"] = f"{question['text']} Use a different example than the ones you already discussed."
+
+    question.update({
+        "why_asked": reason,
+        "is_weakness_focused": False,
+        "order_idx": order_idx,
+    })
+    return question
+
+
 def generator_agent(state: InterviewState) -> dict:
     """
     Generate the next interview question.
@@ -47,6 +124,11 @@ def generator_agent(state: InterviewState) -> dict:
     retrieved_chunks = state.get("retrieved_chunks", [])
     questions = state.get("questions", [])
     evaluations = state.get("evaluations", [])
+    current_index = state.get("current_index", 0)
+    resume_summary = state.get("resume_summary", {})
+    job_description = state.get("job_description", "")
+    projects = resume_summary.get("projects", []) if isinstance(resume_summary, dict) else []
+    skills = resume_summary.get("skills", []) if isinstance(resume_summary, dict) else []
 
     # Build context from retrieved chunks
     context_text = "\n".join(
@@ -68,7 +150,7 @@ def generator_agent(state: InterviewState) -> dict:
     else:
         question_type = "new"
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.4)
+    llm = get_gemini_direct(temperature=0.4)
 
     prompt = f"""You are {persona['name']}, conducting an interview.
 
@@ -76,11 +158,21 @@ def generator_agent(state: InterviewState) -> dict:
     Tone: {persona['tone']}
     Question Style Rules: {chr(10).join('- ' + s for s in persona['question_style'])}
 
+    Interview Progress: question index {current_index}, generated questions so far {len(questions)}
     Topic to test: {topic_info.get('topic', '')}
     Category: {topic_info.get('category', '')}
     Difficulty: {topic_info.get('difficulty', 'medium')}
     Focus: {topic_info.get('focus', '')}
     Question Type: {question_type}
+
+    Candidate Resume Projects:
+    {json.dumps(projects[:5])[:2000] if projects else "No explicit projects parsed."}
+
+    Candidate Skills:
+    {json.dumps(skills[:20])[:1000] if skills else "No explicit skills parsed."}
+
+    Job Description:
+    {job_description[:2500] if job_description else "No detailed job description provided."}
 
     Resume Context:
     {context_text}
@@ -91,6 +183,9 @@ def generator_agent(state: InterviewState) -> dict:
     Weak topics for this candidate: {state.get('weak_topics', [])}
 
     Generate ONE interview question. Stay strictly in character.
+    If this is question index 0, ask for a brief introduction tied to the target role.
+    If this is question index 1 or 2, ask about a specific resume project or shipped work, including ownership, trade-offs, impact, and technical decisions.
+    For later questions, connect resume evidence to the job description and adapt based on prior answers.
     {"This is a FOLLOW-UP — dig deeper into the previous topic since the candidate scored low." if question_type == "follow_up" else ""}
 
     Return ONLY valid JSON:
@@ -105,15 +200,7 @@ def generator_agent(state: InterviewState) -> dict:
 
     try:
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```"):
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1]
-            if content.startswith("json"):
-                content = content[4:]
-
-        question_data = json.loads(content.strip())
+        question_data = parse_llm_json(response.content)
         question_data["order_idx"] = len(questions)
 
         # Mark if this is a weakness-focused question
@@ -131,13 +218,5 @@ def generator_agent(state: InterviewState) -> dict:
 
     except (json.JSONDecodeError, Exception) as e:
         logger.error("question_generation_failed", error=str(e))
-        fallback = {
-            "text": f"Tell me about your experience with {topic_info.get('topic', 'your field')}.",
-            "category": topic_info.get("category", "General"),
-            "topic": topic_info.get("topic", ""),
-            "difficulty": topic_info.get("difficulty", "medium"),
-            "why_asked": "Fallback question due to generation error",
-            "is_weakness_focused": False,
-            "order_idx": len(questions),
-        }
+        fallback = fallback_question_for_index(state, questions)
         return {"questions": questions + [fallback]}

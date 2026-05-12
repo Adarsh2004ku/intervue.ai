@@ -46,8 +46,10 @@ const HomePage: React.FC = () => {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [costs, setCosts] = useState<CostsResponse | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [interviewHealth, setInterviewHealth] = useState<{ status: string; service: string } | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
+  const [jobDescription, setJobDescription] = useState('');
   const [interviewMode, setInterviewMode] = useState<InterviewMode>('faang');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -67,12 +69,13 @@ const HomePage: React.FC = () => {
         setLoading(true);
         const localInterviews = interviewHistoryStore().list();
         const me = await api.auth.me();
-        const [adminResult, resumeResult, costsResult, metricsResult] = await Promise.allSettled([
+        const [adminResult, resumeResult, costsResult, metricsResult, healthResult, historyResult] = await Promise.allSettled([
           api.admin.dashboard(),
           api.resume.list(),
           api.admin.costs(7),
           api.admin.metrics(),
           api.interview.health(),
+          api.interview.history(),
         ]);
 
         const adminData = adminResult.status === 'fulfilled'
@@ -93,19 +96,28 @@ const HomePage: React.FC = () => {
         const metricsData = metricsResult.status === 'fulfilled'
           ? metricsResult.value
           : null;
-        const dashboardData = normalizeDashboard(adminData, resumeData.resumes, localInterviews);
+        const healthData = healthResult.status === 'fulfilled'
+          ? healthResult.value
+          : null;
+        const interviewData = historyResult.status === 'fulfilled'
+          ? historyResult.value.interviews
+          : localInterviews;
+        const dashboardData = normalizeDashboard(adminData, resumeData.resumes, interviewData);
 
         setProfile(me);
         setDashboard(dashboardData);
         setResumes(resumeData.resumes);
         setCosts(costsData);
         setMetrics(metricsData);
+        setInterviewHealth(healthData);
         setSelectedResumeId(resumeData.resumes[0]?.id || dashboardData.resumes[0]?.id || '');
         if (
           adminResult.status === 'rejected'
           || resumeResult.status === 'rejected'
           || costsResult.status === 'rejected'
           || metricsResult.status === 'rejected'
+          || healthResult.status === 'rejected'
+          || historyResult.status === 'rejected'
         ) {
           setStatus('Logged in. Some dashboard data is temporarily unavailable.');
         }
@@ -163,16 +175,33 @@ const HomePage: React.FC = () => {
     },
     {
       label: 'API Health',
-      value: metrics?.status || 'Checking',
-      status: metrics?.redis_connected ? `Redis ${metrics.redis_memory || 'connected'}` : 'Redis unavailable',
-      trend: metrics?.redis_error || 'Backend metrics route connected',
+      value: interviewHealth?.status || metrics?.status || 'Checking',
+      status: interviewHealth?.service ? `${interviewHealth.service} route connected` : 'Interview route pending',
+      trend: metrics?.redis_connected
+        ? `Redis ${metrics.redis_memory || 'connected'}`
+        : metrics?.redis_error || 'Redis unavailable',
       color: '#0891b2',
     },
-  ], [costs, dashboard, metrics]);
+  ], [costs, dashboard, interviewHealth, metrics]);
 
   const handleLogout = () => {
     tokenStore.clear();
     navigate('/login');
+  };
+
+  const syncResumeDashboard = (nextResumes: Resume[]) => {
+    setDashboard((current) => ({
+      ...current,
+      stats: {
+        ...current.stats,
+        resume_count: nextResumes.length,
+      },
+      activities: [
+        ...current.activities.filter((item) => item.name !== 'Resumes'),
+        { name: 'Resumes', value: nextResumes.length },
+      ],
+      resumes: nextResumes,
+    }));
   };
 
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,6 +217,7 @@ const HomePage: React.FC = () => {
       const result = await api.resume.upload(file);
       const freshResumes = await api.resume.list();
       setResumes(freshResumes.resumes);
+      syncResumeDashboard(freshResumes.resumes);
       setSelectedResumeId(result.resume_id);
       setStatus(result.message);
     } catch (err) {
@@ -223,18 +253,8 @@ const HomePage: React.FC = () => {
       await api.resume.delete(selectedResumeId);
       const freshResumes = await api.resume.list();
       setResumes(freshResumes.resumes);
+      syncResumeDashboard(freshResumes.resumes);
       setSelectedResumeId(freshResumes.resumes[0]?.id || '');
-      setDashboard((current) => normalizeDashboard(
-        {
-          total_interviews: current.stats.total_interviews,
-          completed_interviews: current.stats.completed_interviews,
-          average_score: current.stats.average_score,
-          total_users: Number(current.activities.find((item) => item.name === 'Users')?.value || 0),
-          today_cost_inr: 0,
-        },
-        freshResumes.resumes,
-        current.recent_interviews,
-      ));
       setStatus('Resume deleted.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to delete resume.');
@@ -253,9 +273,9 @@ const HomePage: React.FC = () => {
       setStarting(true);
       setError('');
       setStatus('Starting interview session...');
-      const started = await api.interview.start(selectedResumeId, jobRole, interviewMode);
+      const started = await api.interview.start(selectedResumeId, jobRole, interviewMode, jobDescription);
       activeInterviewStore().set(started);
-      interviewHistoryStore().upsert({
+      const startedInterview: DashboardResponse['recent_interviews'][number] = {
         id: started.interview_id,
         resume_id: started.resume_id,
         job_role: started.job_role,
@@ -264,7 +284,19 @@ const HomePage: React.FC = () => {
         overall_score: null,
         created_at: started.created_at,
         completed_at: null,
-      });
+      };
+      interviewHistoryStore().upsert(startedInterview);
+      setDashboard((current) => ({
+        ...current,
+        stats: {
+          ...current.stats,
+          total_interviews: Math.max(current.stats.total_interviews, current.recent_interviews.length + 1),
+        },
+        recent_interviews: [
+          startedInterview,
+          ...current.recent_interviews.filter((item) => item.id !== startedInterview.id),
+        ].slice(0, 12),
+      }));
       navigate(`/interview?interviewId=${started.interview_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to start interview.');
@@ -502,6 +534,12 @@ const HomePage: React.FC = () => {
                 {starting ? 'Starting...' : 'Start'}
               </button>
             </div>
+            <textarea
+              value={jobDescription}
+              onChange={(event) => setJobDescription(event.target.value)}
+              placeholder="Paste the job description or key requirements for more targeted questions"
+              rows={5}
+            />
           </motion.form>
         </motion.section>}
 

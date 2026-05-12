@@ -74,6 +74,7 @@ export type StartInterviewResponse = {
   persona_name: string;
   opening_line: string;
   job_role: string;
+  job_description?: string;
   interview_mode: InterviewMode;
   resume_id?: string;
   created_at: string;
@@ -172,6 +173,7 @@ export type AudioEvaluation = {
 export type AnalyzeAudioResponse = {
   success: boolean;
   evaluation?: AudioEvaluation;
+  next_question?: InterviewQuestion | null;
   cost?: CostRecord | null;
   session_cost?: CostSummary;
   error?: string;
@@ -220,6 +222,13 @@ export type BehaviorSummaryResponse = {
 type StartInterviewRouteResponse = {
   success: boolean;
   interview_id: string;
+  first_question: InterviewQuestion;
+  persona_name: string;
+  opening_line: string;
+  job_role: string;
+  job_description?: string;
+  interview_mode: InterviewMode;
+  resume_id?: string;
   created_at: string;
 };
 
@@ -303,74 +312,42 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 const buildWsUrl = (path: string) => {
+  const token = tokenStore.get();
   if (WS_BASE_URL) {
-    return `${WS_BASE_URL}${path}`;
+    const url = new URL(`${WS_BASE_URL}${path}`, window.location.origin);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : url.protocol === 'http:' ? 'ws:' : url.protocol;
+    if (token) {
+      url.searchParams.set('token', token);
+    }
+    return url.toString();
   }
 
   const apiUrl = new URL(API_BASE_URL, window.location.origin);
   apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   apiUrl.pathname = `${apiUrl.pathname.replace(/\/$/, '')}${path}`;
   apiUrl.search = '';
+  if (token) {
+    apiUrl.searchParams.set('token', token);
+  }
   return apiUrl.toString();
 };
 
 const interviewRouteBase = '/interview/interview';
 
-const personaByMode: Record<InterviewMode, { name: string; openingLine: string; starter: string }> = {
+const personaByMode: Record<InterviewMode, { name: string; openingLine: string }> = {
   faang: {
     name: 'Alex (FAANG Interviewer)',
     openingLine: "Hi, I'm Alex. Today we'll go deep on your technical skills. Let's begin.",
-    starter: 'Walk me through one technically challenging project from your resume. What trade-offs did you make, and how did you validate the result?',
   },
   startup: {
     name: 'Priya (Startup Founder)',
     openingLine: "Hey! I'm Priya. Tell me about something you built and shipped. I want to hear the real story.",
-    starter: 'Tell me about a product or feature you shipped under constraints. What did you prioritize, and what would you improve now?',
   },
   hr: {
     name: 'Riya (HR Manager)',
     openingLine: "Hello! I'm Riya, and I'm excited to learn more about you today. Let's get started.",
-    starter: 'Tell me about yourself and a recent experience that shows how you work with a team.',
   },
 };
-
-export const interviewQuestionBank: Record<InterviewMode, string[]> = {
-  faang: [
-    personaByMode.faang.starter,
-    'Describe a difficult bug or performance issue you solved. How did you isolate the root cause?',
-    'Pick a system you have built. How would you scale it if usage increased by 10x?',
-    'Tell me about an edge case you almost missed and how you handled it.',
-  ],
-  startup: [
-    personaByMode.startup.starter,
-    'Tell me about a time you had to move fast with incomplete information. What did you do?',
-    'What is one product decision you influenced, and how did you measure whether it worked?',
-    'Describe a moment when you took ownership beyond your assigned role.',
-  ],
-  hr: [
-    personaByMode.hr.starter,
-    'Tell me about a time you handled conflict with a teammate or stakeholder.',
-    'Describe a failure or setback. What did you learn, and what changed afterward?',
-    'What kind of work environment helps you do your best work?',
-  ],
-};
-
-const createQuestion = (
-  mode: InterviewMode,
-  jobRole: string,
-  orderIdx = 0,
-): InterviewQuestion => ({
-  text: interviewQuestionBank[mode][orderIdx % interviewQuestionBank[mode].length],
-  category: mode === 'hr' ? 'Behavioral' : 'Interview',
-  topic: jobRole || 'General',
-  difficulty: orderIdx === 0 ? 'warmup' : 'adaptive',
-  why_asked: 'This frontend question is sent to the backend audio evaluator for scoring.',
-  order_idx: orderIdx,
-});
-
-export function createLocalQuestion(mode: InterviewMode, jobRole: string, orderIdx: number) {
-  return createQuestion(mode, jobRole, orderIdx);
-}
 
 export function normalizeDashboard(
   admin: AdminDashboardResponse,
@@ -456,21 +433,30 @@ export const api = {
   },
   interview: {
     health: () => request<{ status: string; service: string }>(`${interviewRouteBase}/health`),
-    start: async (resume_id: string, job_role: string, interview_mode: InterviewMode) => {
+    history: () => request<{ interviews: InterviewRecord[] }>(`${interviewRouteBase}/history`),
+    status: (interviewId: string) => request<InterviewStatusResponse>(`${interviewRouteBase}/${interviewId}/status`),
+    start: async (resume_id: string, job_role: string, interview_mode: InterviewMode, job_description = '') => {
       const result = await request<StartInterviewRouteResponse>(`${interviewRouteBase}/start`, {
         method: 'POST',
-        body: JSON.stringify({ resume_id, job_role, interview_mode }),
+        body: JSON.stringify({ resume_id, job_role, interview_mode, job_description }),
       });
       const persona = personaByMode[interview_mode];
 
       return {
         ...result,
-        first_question: createQuestion(interview_mode, job_role),
-        persona_name: persona.name,
-        opening_line: persona.openingLine,
-        job_role,
-        interview_mode,
-        resume_id,
+        first_question: result.first_question || {
+          text: 'Give me a brief introduction, focusing on your background and why this role is a fit.',
+          category: 'Intro',
+          topic: job_role || 'Role fit',
+          difficulty: 'easy',
+          order_idx: 0,
+        },
+        persona_name: result.persona_name || persona.name,
+        opening_line: result.opening_line || persona.openingLine,
+        job_role: result.job_role || job_role,
+        job_description: result.job_description || job_description,
+        interview_mode: result.interview_mode || interview_mode,
+        resume_id: result.resume_id || resume_id,
         created_at: result.created_at || new Date().toISOString(),
       } satisfies StartInterviewResponse;
     },

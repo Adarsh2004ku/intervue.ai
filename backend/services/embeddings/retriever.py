@@ -1,6 +1,5 @@
-
 import numpy as np
-from backend.services.embeddings.embedder import embed_text
+from backend.services.embeddings.embedder import embed_query
 from backend.db.session import supabase
 from backend.core.config import settings
 from backend.core.logging import get_logger
@@ -43,7 +42,7 @@ def retrieve_chunks(
     - 0.7 = balanced (default)
     """
     # Step 1: Embed the query
-    query_vector = embed_text(query)
+    query_vector = embed_query(query)
 
     # Step 2: Get candidate chunks from pgvector
     try:

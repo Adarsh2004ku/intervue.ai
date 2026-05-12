@@ -6,11 +6,11 @@ Resume routes:
 """
 
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from backend.services.resume_parser import extract_text, classify_resume
 from backend.services.rag_ingestion import chunk_text, embed_and_store
 from backend.db.session import supabase
-from backend.core.security import get_current_user  # <-- Import the dependency
+from backend.core.security import get_current_user
 from backend.core.logging import get_logger
 
 logger = get_logger("resume_routes")
@@ -36,10 +36,10 @@ async def list_resumes(user: dict = Depends(get_current_user)):
 @router.post("/upload")
 async def upload_resume(
     file: UploadFile = File(...),
-    user: dict = Depends(get_current_user)  # <-- This handles auth automatically!
+    user: dict = Depends(get_current_user),
 ):
     """Upload a resume (PDF or DOCX), parse it, embed it, store in pgvector."""
-    user_id = user["sub"]  # Extract user_id from the verified token
+    user_id = user["sub"]
 
     # Validate file type
     if not file.filename:
@@ -109,7 +109,13 @@ async def upload_resume(
 @router.get("/{resume_id}")
 async def get_resume(resume_id: str, user: dict = Depends(get_current_user)):
     """Get parsed resume data."""
-    result = supabase.table("resumes").select("*").eq("id", resume_id).execute()
+    result = (
+        supabase.table("resumes")
+        .select("*")
+        .eq("id", resume_id)
+        .eq("user_id", user["sub"])
+        .execute()
+    )
     if not result.data:
         raise HTTPException(status_code=404, detail="Resume not found")
     return result.data[0]

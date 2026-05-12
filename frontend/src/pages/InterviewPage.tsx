@@ -12,7 +12,6 @@ import {
   InterviewQuestion,
   activeInterviewStore,
   api,
-  createLocalQuestion,
   interviewHistoryStore,
   tokenStore,
 } from '../services/api';
@@ -66,6 +65,8 @@ const InterviewPage: React.FC = () => {
   const audioContextRef = useRef<BrowserAudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const speechTimeoutRef = useRef<number | null>(null);
+  const autoSpeechTimerRef = useRef<number | null>(null);
+  const spokenQuestionKeyRef = useRef('');
   const pendingSpeechTextRef = useRef('');
   const pendingSpeechRequestRef = useRef('');
   const interviewId = searchParams.get('interviewId') || activeInterviewStore().get()?.interview_id || '';
@@ -89,7 +90,7 @@ const InterviewPage: React.FC = () => {
   const [latestBehavior, setLatestBehavior] = useState<BehaviorAnalysis | null>(null);
   const [behaviorSummary, setBehaviorSummary] = useState<BehaviorSummary | null>(null);
   const [sessionCost, setSessionCost] = useState<CostSummary | null>(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
 
   useEffect(() => {
     if (!tokenStore.get()) {
@@ -105,6 +106,17 @@ const InterviewPage: React.FC = () => {
     const checkInterviewApi = async () => {
       try {
         await api.interview.health();
+        const status = await api.interview.status(interviewId);
+        const persistedQuestion = status.questions[status.questions.length - 1];
+        if (persistedQuestion) {
+          setCurrentQuestion(persistedQuestion);
+          setQuestionNumber(
+            typeof persistedQuestion.order_idx === 'number'
+              ? persistedQuestion.order_idx + 1
+              : status.questions.length,
+          );
+        }
+        interviewHistoryStore().upsert(status.interview);
         setSessionStatus('Session ready');
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
@@ -341,6 +353,32 @@ const InterviewPage: React.FC = () => {
     Object.entries(sessionCost?.by_call_type || {})
       .map(([name, amount]) => ({ name, amount }))
   ), [sessionCost]);
+  const interviewerContext = currentQuestion.why_asked || activeInterview?.opening_line || sessionStatus;
+
+  const stopQuestionAudio = (clearPendingSpeech = false) => {
+    if (clearPendingSpeech && speechTimeoutRef.current) {
+      window.clearTimeout(speechTimeoutRef.current);
+      speechTimeoutRef.current = null;
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    try {
+      audioSourceRef.current?.stop();
+    } catch {
+      // The source may already have ended.
+    }
+    audioSourceRef.current = null;
+
+    interviewerAudioRef.current?.pause();
+    interviewerAudioRef.current = null;
+    if (interviewerAudioUrlRef.current) {
+      URL.revokeObjectURL(interviewerAudioUrlRef.current);
+      interviewerAudioUrlRef.current = null;
+    }
+  };
 
   const speakWithBrowser = (text: string) => {
     if (!('speechSynthesis' in window)) {
@@ -360,7 +398,7 @@ const InterviewPage: React.FC = () => {
     utterance.pitch = 1;
     utterance.volume = 1;
     utterance.onstart = () => setSessionStatus('Playing interviewer audio...');
-    utterance.onend = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
+    utterance.onend = () => setSessionStatus('Question audio played. Record when you are ready.');
     utterance.onerror = () => setSessionStatus('Unable to play interviewer audio');
     window.speechSynthesis.speak(utterance);
   };
@@ -388,10 +426,7 @@ const InterviewPage: React.FC = () => {
 
   const playInterviewerAudio = async (audioBase64: string, mimeType: string, fallbackText: string) => {
     try {
-      interviewerAudioRef.current?.pause();
-      if (interviewerAudioUrlRef.current) {
-        URL.revokeObjectURL(interviewerAudioUrlRef.current);
-      }
+      stopQuestionAudio();
 
       const audioBlob = await fetch(`data:${mimeType};base64,${audioBase64}`)
         .then((response) => response.blob());
@@ -404,7 +439,7 @@ const InterviewPage: React.FC = () => {
         const source = context.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(context.destination);
-        source.onended = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
+        source.onended = () => setSessionStatus('Question audio played. Record when you are ready.');
         audioSourceRef.current = source;
         setSessionStatus('Playing ElevenLabs interviewer voice...');
         source.start(0);
@@ -416,7 +451,7 @@ const InterviewPage: React.FC = () => {
       interviewerAudioRef.current = audio;
       interviewerAudioUrlRef.current = audioUrl;
       audio.onplaying = () => setSessionStatus('Playing ElevenLabs interviewer voice...');
-      audio.onended = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
+      audio.onended = () => setSessionStatus('Question audio played. Record when you are ready.');
       audio.onerror = () => {
         setSessionStatus('ElevenLabs audio could not play. Using browser voice.');
         if (fallbackText) {
@@ -432,17 +467,14 @@ const InterviewPage: React.FC = () => {
     }
   };
 
-  const speakText = async (text: string, enableFutureQuestions = false) => {
+  const speakText = async (text: string) => {
     const cleanText = text.trim();
     if (!cleanText) {
       setSessionStatus('No question available to speak yet');
       return;
     }
 
-    if (enableFutureQuestions) {
-      setVoiceEnabled(true);
-    }
-
+    stopQuestionAudio(true);
     pendingSpeechTextRef.current = cleanText;
 
     try {
@@ -478,20 +510,41 @@ const InterviewPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (voiceEnabled && currentQuestion.text) {
-      speakText(currentQuestion.text);
+    const cleanText = currentQuestion.text?.trim();
+    if (!interviewId || !connected || !cleanText || cleanText === fallbackQuestion.text) {
+      return undefined;
     }
-  }, [currentQuestion.text, voiceEnabled]);
 
-  const handleSoundCheck = () => {
+    const speechKey = `${currentQuestion.order_idx ?? 'queued'}:${cleanText}`;
+    if (spokenQuestionKeyRef.current === speechKey) {
+      return undefined;
+    }
+
+    spokenQuestionKeyRef.current = speechKey;
+    autoSpeechTimerRef.current = window.setTimeout(() => {
+      autoSpeechTimerRef.current = null;
+      speakText(cleanText);
+    }, 350);
+
+    return () => {
+      if (autoSpeechTimerRef.current) {
+        window.clearTimeout(autoSpeechTimerRef.current);
+        autoSpeechTimerRef.current = null;
+      }
+    };
+  }, [connected, currentQuestion.order_idx, currentQuestion.text, interviewId]);
+
+  const handleReplayQuestion = () => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'ping' }));
     }
 
-    speakText(
-      currentQuestion.text || 'Sound check is working. Your interviewer voice is enabled.',
-      true,
-    );
+    if (autoSpeechTimerRef.current) {
+      window.clearTimeout(autoSpeechTimerRef.current);
+      autoSpeechTimerRef.current = null;
+    }
+
+    speakText(currentQuestion.text || 'No question is available to replay yet.');
   };
 
   const sendAudioBlob = async (blob: Blob, durationSec?: number) => {
@@ -502,6 +555,7 @@ const InterviewPage: React.FC = () => {
     }
 
     try {
+      setIsSubmittingAnswer(true);
       setSessionStatus('Answer sent. Waiting for evaluation...');
       const result = await api.interview.analyzeAudio(interviewId, question, blob, durationSec);
 
@@ -520,27 +574,34 @@ const InterviewPage: React.FC = () => {
       }
       interviewHistoryStore().update(interviewId, { overall_score: evaluation.score });
 
-      const nextOrder = questionNumber;
-      const nextQuestion = createLocalQuestion(
-        activeInterview?.interview_mode || 'faang',
-        activeInterview?.job_role || 'General role',
-        nextOrder,
-      );
-      setCurrentQuestion(nextQuestion);
-      setQuestionNumber(nextOrder + 1);
-      activeInterviewStore().update({
-        first_question: nextQuestion,
-      });
-      setSessionStatus('Answer evaluated. Next question is ready.');
-      if (voiceEnabled && nextQuestion.text) {
-        window.setTimeout(() => speakText(nextQuestion.text || ''), 0);
+      if (result.next_question) {
+        const nextQuestion = result.next_question;
+        setCurrentQuestion(nextQuestion);
+        setQuestionNumber((current) => (
+          typeof nextQuestion.order_idx === 'number'
+            ? nextQuestion.order_idx + 1
+            : current + 1
+        ));
+        activeInterviewStore().update({
+          first_question: nextQuestion,
+        });
+        setSessionStatus('Answer evaluated. Next question will play automatically.');
+      } else {
+        setSessionStatus('Answer evaluated. No more questions are queued.');
       }
     } catch (err) {
       setSessionStatus(err instanceof ApiError ? err.message : 'Audio evaluation failed.');
+    } finally {
+      setIsSubmittingAnswer(false);
     }
   };
 
   const handleRecordToggle = () => {
+    if (isSubmittingAnswer) {
+      setSessionStatus('Please wait while your answer is submitted.');
+      return;
+    }
+
     const stream = mediaStreamRef.current;
     if (!stream) {
       setSessionStatus(mediaError || 'Camera and microphone are not ready');
@@ -553,6 +614,7 @@ const InterviewPage: React.FC = () => {
       return;
     }
 
+    stopQuestionAudio(true);
     audioChunksRef.current = [];
     const audioStream = new MediaStream(stream.getAudioTracks());
     const recorder = new MediaRecorder(audioStream);
@@ -624,14 +686,7 @@ const InterviewPage: React.FC = () => {
       }
     }
     socketRef.current?.close();
-    if (speechTimeoutRef.current) {
-      window.clearTimeout(speechTimeoutRef.current);
-    }
-    audioSourceRef.current?.stop();
-    interviewerAudioRef.current?.pause();
-    if (interviewerAudioUrlRef.current) {
-      URL.revokeObjectURL(interviewerAudioUrlRef.current);
-    }
+    stopQuestionAudio(true);
     audioContextRef.current?.close();
     activeInterviewStore().clear();
     navigate('/home');
@@ -758,7 +813,7 @@ const InterviewPage: React.FC = () => {
                 <span></span>
                 <span></span>
               </div>
-              <p>{activeInterview?.opening_line || currentQuestion.why_asked || sessionStatus}</p>
+              <p>{interviewerContext}</p>
             </div>
 
             <motion.div
@@ -782,9 +837,10 @@ const InterviewPage: React.FC = () => {
             <motion.button
               className={`${styles.controlBtn} ${isRecording ? styles.active : ''}`}
               onClick={handleRecordToggle}
+              disabled={isSubmittingAnswer}
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.95 }}
-              title={isRecording ? 'Stop and send answer' : 'Record answer'}
+              title={isSubmittingAnswer ? 'Submitting answer' : isRecording ? 'Stop and send answer' : 'Record answer'}
             >
               <Mic size={20} />
             </motion.button>
@@ -818,8 +874,13 @@ const InterviewPage: React.FC = () => {
             >
               <Settings size={20} />
             </motion.button>
-            <button type="button" className={styles.answerAction} onClick={handleRecordToggle}>
-              {isRecording ? 'Stop & Send' : 'Record Answer'}
+            <button
+              type="button"
+              className={styles.answerAction}
+              onClick={handleRecordToggle}
+              disabled={isSubmittingAnswer}
+            >
+              {isSubmittingAnswer ? 'Submitting...' : isRecording ? 'Stop & Send' : 'Record Answer'}
             </button>
           </motion.div>
         </motion.div>
@@ -909,7 +970,7 @@ const InterviewPage: React.FC = () => {
                   key={i}
                   className={styles.waveBar}
                   animate={{
-                    height: connected && !isMuted ? `${20 + ((i * 17) % 80)}%` : '10%',
+                    height: isRecording ? `${20 + ((i * 17) % 80)}%` : '10%',
                   }}
                   transition={{
                     duration: 0.3,
@@ -920,13 +981,23 @@ const InterviewPage: React.FC = () => {
               ))}
             </div>
             <div className={styles.waveformInfo}>
-              <span>{connected ? 'Live channel ready' : 'Waiting for channel'}</span>
-              <motion.span
-                animate={{ opacity: [1, 0.5, 1] }}
-                transition={{ duration: 1, repeat: Infinity }}
-              >
-                🔴
-              </motion.span>
+              <span>
+                {isRecording
+                  ? 'Recording answer'
+                  : isSubmittingAnswer
+                    ? 'Submitting answer'
+                    : connected
+                      ? 'Ready to record'
+                      : 'Waiting for channel'}
+              </span>
+              {isRecording && (
+                <motion.span
+                  animate={{ opacity: [1, 0.5, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                >
+                  🔴
+                </motion.span>
+              )}
             </div>
             {latestTranscript && (
               <p className={styles.transcriptText}>{latestTranscript}</p>
@@ -981,10 +1052,10 @@ const InterviewPage: React.FC = () => {
               className={styles.notesBtn}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={handleSoundCheck}
+              onClick={handleReplayQuestion}
             >
               <Volume2 size={16} />
-              Speak Question
+              Replay Question
             </motion.button>
           </motion.div>
         </motion.div>
