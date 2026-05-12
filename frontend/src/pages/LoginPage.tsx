@@ -15,16 +15,23 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  // ── Handle OAuth callback from URL hash ──────────────────────────
   useEffect(() => {
-    // Supabase Implicit Flow puts the token in the URL hash fragment
+    const query = new URLSearchParams(window.location.search);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const backendAccessToken = query.get('access_token');
     const supabaseAccessToken = hash.get('access_token');
-    const errorDescription = hash.get('error_description');
+    const errorDescription = query.get('error') || hash.get('error_description');
 
     if (errorDescription) {
       setError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
-      window.history.replaceState(null, '', '/login'); // clean up URL
+      window.history.replaceState(null, '', '/login');
+      return;
+    }
+
+    if (backendAccessToken) {
+      tokenStore.set(backendAccessToken);
+      window.history.replaceState(null, '', '/login');
+      navigate('/home');
       return;
     }
 
@@ -37,11 +44,9 @@ const LoginPage: React.FC = () => {
         setLoading(true);
         setError('');
         
-        // Send Supabase token to Python backend to get our app JWT
         const result = await api.auth.supabaseSession(supabaseAccessToken);
         tokenStore.set(result.access_token);
-        
-        // Clean the URL hash so the token doesn't stay in browser history
+
         window.history.replaceState(null, '', '/login');
         navigate('/home');
       } catch (err) {
@@ -59,12 +64,24 @@ const LoginPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError('Enter your email and password.');
+      return;
+    }
+
+    if (mode === 'signup' && !fullName.trim()) {
+      setError('Enter your full name to create an account.');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const result = mode === 'login'
-        ? await api.auth.login(email, password)
-        : await api.auth.signup(email, password, fullName);
+        ? await api.auth.login(trimmedEmail, password)
+        : await api.auth.signup(trimmedEmail, password, fullName.trim());
 
       tokenStore.set(result.access_token);
       navigate('/home');
@@ -75,22 +92,22 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // ── Google OAuth ──────────────────────────────────────────────────
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    
+
     if (!supabaseUrl) {
       setError('VITE_SUPABASE_URL is missing in frontend/.env');
       return;
     }
 
+    setLoading(true);
+    setError('');
+
     const redirectTo = `${window.location.origin}/login`;
-    
-    // Redirect directly to Supabase Auth (no JS SDK needed)
     const url = new URL(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/authorize`);
     url.searchParams.set('provider', 'google');
     url.searchParams.set('redirect_to', redirectTo);
-    
+
     window.location.href = url.toString();
   };
 
@@ -194,6 +211,7 @@ const LoginPage: React.FC = () => {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className={styles.input}
+                    required={mode === 'signup'}
                   />
                 </div>
               </motion.div>
@@ -210,6 +228,7 @@ const LoginPage: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className={styles.input}
+                  required
                 />
               </div>
             </motion.div>
@@ -225,6 +244,7 @@ const LoginPage: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={styles.input}
+                  required
                 />
                 <button
                   type="button"

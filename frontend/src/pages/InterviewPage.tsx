@@ -4,26 +4,43 @@ import { Mic, Video, Share2, Settings, Clock, Volume2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ApiError,
+  AudioEvaluation,
+  BehaviorAnalysis,
+  BehaviorSummary,
+  CostRecord,
+  CostSummary,
   InterviewQuestion,
-  Report,
   activeInterviewStore,
   api,
+  createLocalQuestion,
+  interviewHistoryStore,
   tokenStore,
 } from '../services/api';
 import styles from './InterviewPage.module.css';
 
 type SessionMessage = {
-  type: 'pong' | 'next_question' | 'interview_complete' | 'error';
-  question?: string;
-  question_number?: number;
-  topic?: string;
-  why_asked?: string;
-  previous_score?: number;
-  previous_reasoning?: string;
-  overall_score?: number;
-  grade?: string;
-  report?: Report;
+  type: 'pong' | 'vision' | 'summary' | 'audio' | 'error';
+  data?: BehaviorAnalysis | BehaviorSummary | {
+    success: boolean;
+    audio_base64?: string;
+    mime_type?: string;
+    request_id?: string;
+    text?: string;
+    cost?: CostRecord | null;
+    session_cost?: CostSummary;
+    error?: string;
+  };
+  cost?: CostRecord | null;
+  session_cost?: CostSummary;
   message?: string;
+};
+
+type BrowserAudioContext = AudioContext & {
+  webkitAudioContext?: never;
+};
+
+type BrowserWindowWithAudio = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext;
 };
 
 const fallbackQuestion: InterviewQuestion = {
@@ -43,6 +60,14 @@ const InterviewPage: React.FC = () => {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const interviewerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const interviewerAudioUrlRef = useRef<string | null>(null);
+  const audioContextRef = useRef<BrowserAudioContext | null>(null);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const speechTimeoutRef = useRef<number | null>(null);
+  const pendingSpeechTextRef = useRef('');
+  const pendingSpeechRequestRef = useRef('');
   const interviewId = searchParams.get('interviewId') || activeInterviewStore().get()?.interview_id || '';
   const activeInterview = activeInterviewStore().get();
 
@@ -59,7 +84,11 @@ const InterviewPage: React.FC = () => {
   const [questionNumber, setQuestionNumber] = useState((currentQuestion.order_idx || 0) + 1);
   const [latestScore, setLatestScore] = useState<number | null>(null);
   const [latestReasoning, setLatestReasoning] = useState('');
-  const [report, setReport] = useState<Report | null>(null);
+  const [latestTranscript, setLatestTranscript] = useState('');
+  const [latestEvaluation, setLatestEvaluation] = useState<AudioEvaluation | null>(null);
+  const [latestBehavior, setLatestBehavior] = useState<BehaviorAnalysis | null>(null);
+  const [behaviorSummary, setBehaviorSummary] = useState<BehaviorSummary | null>(null);
+  const [sessionCost, setSessionCost] = useState<CostSummary | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   useEffect(() => {
@@ -73,26 +102,21 @@ const InterviewPage: React.FC = () => {
       return;
     }
 
-    const loadStatus = async () => {
+    const checkInterviewApi = async () => {
       try {
-        const status = await api.interview.status(interviewId);
-        const firstSavedQuestion = status.questions[0];
-        if (firstSavedQuestion) {
-          setCurrentQuestion(firstSavedQuestion);
-          setQuestionNumber((firstSavedQuestion.order_idx || 0) + 1);
-        }
-        setSessionStatus(status.interview.status === 'completed' ? 'Interview completed' : 'Session ready');
+        await api.interview.health();
+        setSessionStatus('Session ready');
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           tokenStore.clear();
           navigate('/login');
           return;
         }
-        setSessionStatus(err instanceof ApiError ? err.message : 'Unable to load interview status.');
+        setSessionStatus(err instanceof ApiError ? err.message : 'Unable to reach interview API.');
       }
     };
 
-    loadStatus();
+    checkInterviewApi();
   }, [interviewId, navigate]);
 
   useEffect(() => {
@@ -130,26 +154,60 @@ const InterviewPage: React.FC = () => {
         setSessionStatus(message.message || 'Session error');
       }
 
-      if (message.type === 'next_question') {
-        setCurrentQuestion({
-          text: message.question,
-          topic: message.topic,
-          why_asked: message.why_asked,
-          difficulty: 'adaptive',
-          category: 'Live',
-          order_idx: (message.question_number || 1) - 1,
-        });
-        setQuestionNumber(message.question_number || 1);
-        setLatestScore(message.previous_score ?? null);
-        setLatestReasoning(message.previous_reasoning || '');
-        setSessionStatus('Next question received');
+      if (message.type === 'vision' && message.data) {
+        setLatestBehavior(message.data as BehaviorAnalysis);
+        if (message.session_cost) {
+          setSessionCost(message.session_cost);
+        }
+        setSessionStatus('Vision analysis received');
       }
 
-      if (message.type === 'interview_complete') {
-        setLatestScore(message.overall_score ?? null);
-        setReport(message.report || null);
-        setSessionStatus(`Interview completed${message.grade ? ` · ${message.grade}` : ''}`);
-        activeInterviewStore().clear();
+      if (message.type === 'summary' && message.data) {
+        setBehaviorSummary(message.data as BehaviorSummary);
+        if (message.session_cost) {
+          setSessionCost(message.session_cost);
+        }
+        setSessionStatus('Behavior summary received');
+      }
+
+      if (message.type === 'audio' && message.data) {
+        const audioData = message.data as {
+          success: boolean;
+          audio_base64?: string;
+          mime_type?: string;
+          request_id?: string;
+          text?: string;
+          cost?: CostRecord | null;
+          session_cost?: CostSummary;
+          error?: string;
+        };
+
+        if (speechTimeoutRef.current) {
+          window.clearTimeout(speechTimeoutRef.current);
+          speechTimeoutRef.current = null;
+        }
+
+        if (audioData.request_id && audioData.request_id !== pendingSpeechRequestRef.current) {
+          return;
+        }
+
+        if (!audioData.success || !audioData.audio_base64) {
+          const fallbackText = audioData.text || pendingSpeechTextRef.current || currentQuestion.text || '';
+          setSessionStatus(audioData.error || 'ElevenLabs voice generation failed. Using browser voice.');
+          if (fallbackText) {
+            speakWithBrowser(fallbackText);
+          }
+          return;
+        }
+
+        playInterviewerAudio(
+          audioData.audio_base64,
+          audioData.mime_type || 'audio/mpeg',
+          audioData.text || pendingSpeechTextRef.current || currentQuestion.text || '',
+        );
+        if (audioData.session_cost) {
+          setSessionCost(audioData.session_cost);
+        }
       }
     };
 
@@ -197,6 +255,60 @@ const InterviewPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!interviewId || !isVideoOn) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const captureFrame = () => {
+      const video = localVideoRef.current;
+      if (!video || video.videoWidth === 0 || video.videoHeight === 0 || cancelled) {
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        return;
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(async (blob) => {
+        if (!blob || cancelled) {
+          return;
+        }
+
+        try {
+          const result = await api.interview.analyzeFrame(interviewId, blob);
+          if (result.success && result.analysis) {
+            setLatestBehavior(result.analysis);
+            if (result.session_cost) {
+              setSessionCost(result.session_cost);
+            }
+            setSessionStatus('Camera behavior analyzed');
+          } else if (result.error) {
+            setSessionStatus(result.error);
+          }
+        } catch (err) {
+          setSessionStatus(err instanceof ApiError ? err.message : 'Camera analysis failed.');
+        }
+      }, 'image/jpeg', 0.78);
+    };
+
+    const firstRun = window.setTimeout(captureFrame, 2500);
+    const interval = window.setInterval(captureFrame, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstRun);
+      window.clearInterval(interval);
+    };
+  }, [interviewId, isVideoOn]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev > 0 ? prev - 1 : prev));
     }, 1000);
@@ -207,16 +319,30 @@ const InterviewPage: React.FC = () => {
   const seconds = timeLeft % 60;
 
   const feedbackScores = useMemo(() => {
-    const baseScore = latestScore ?? report?.overall_score ?? 0;
+    if (latestEvaluation) {
+      return [
+        { label: 'Clarity', score: latestEvaluation.clarity_score || 0 },
+        { label: 'Confidence', score: latestEvaluation.confidence_score || 0 },
+        { label: 'Depth', score: latestEvaluation.depth_score || 0 },
+        { label: 'Accuracy', score: latestEvaluation.accuracy_score || 0 },
+      ];
+    }
+
+    const baseScore = latestScore ?? 0;
     return [
       { label: 'Clarity', score: Math.min(100, Math.max(0, baseScore || 0)) },
-      { label: 'Confidence', score: connected ? 85 : 20 },
+      { label: 'Confidence', score: latestBehavior?.confidence_score ?? (connected ? 85 : 20) },
       { label: 'Depth', score: baseScore ? Math.max(0, baseScore - 6) : 0 },
-      { label: 'Pace', score: connected ? 80 : 0 },
+      { label: 'Engagement', score: latestBehavior?.engagement_score ?? (connected ? 80 : 0) },
     ];
-  }, [connected, latestScore, report]);
+  }, [connected, latestBehavior, latestEvaluation, latestScore]);
 
-  const speakText = (text: string, enableFutureQuestions = false) => {
+  const costRows = useMemo(() => (
+    Object.entries(sessionCost?.by_call_type || {})
+      .map(([name, amount]) => ({ name, amount }))
+  ), [sessionCost]);
+
+  const speakWithBrowser = (text: string) => {
     if (!('speechSynthesis' in window)) {
       setSessionStatus('Speech playback is not supported in this browser');
       return;
@@ -228,10 +354,6 @@ const InterviewPage: React.FC = () => {
       return;
     }
 
-    if (enableFutureQuestions) {
-      setVoiceEnabled(true);
-    }
-
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 0.95;
@@ -241,6 +363,118 @@ const InterviewPage: React.FC = () => {
     utterance.onend = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
     utterance.onerror = () => setSessionStatus('Unable to play interviewer audio');
     window.speechSynthesis.speak(utterance);
+  };
+
+  const unlockAudioOutput = async () => {
+    const AudioContextCtor = window.AudioContext || (window as BrowserWindowWithAudio).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return null;
+    }
+
+    const context = audioContextRef.current || new AudioContextCtor();
+    audioContextRef.current = context as BrowserAudioContext;
+
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = context.createBuffer(1, 1, 22050);
+    source.connect(context.destination);
+    source.start(0);
+
+    return context;
+  };
+
+  const playInterviewerAudio = async (audioBase64: string, mimeType: string, fallbackText: string) => {
+    try {
+      interviewerAudioRef.current?.pause();
+      if (interviewerAudioUrlRef.current) {
+        URL.revokeObjectURL(interviewerAudioUrlRef.current);
+      }
+
+      const audioBlob = await fetch(`data:${mimeType};base64,${audioBase64}`)
+        .then((response) => response.blob());
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const context = audioContextRef.current;
+
+      if (context && context.state === 'running') {
+        audioSourceRef.current?.stop();
+        const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
+        const source = context.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(context.destination);
+        source.onended = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
+        audioSourceRef.current = source;
+        setSessionStatus('Playing ElevenLabs interviewer voice...');
+        source.start(0);
+        return;
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      interviewerAudioRef.current = audio;
+      interviewerAudioUrlRef.current = audioUrl;
+      audio.onplaying = () => setSessionStatus('Playing ElevenLabs interviewer voice...');
+      audio.onended = () => setSessionStatus(connected ? 'Live session connected' : 'Question audio played');
+      audio.onerror = () => {
+        setSessionStatus('ElevenLabs audio could not play. Using browser voice.');
+        if (fallbackText) {
+          speakWithBrowser(fallbackText);
+        }
+      };
+      await audio.play();
+    } catch {
+      setSessionStatus('Audio playback was blocked. Using browser voice.');
+      if (fallbackText) {
+        speakWithBrowser(fallbackText);
+      }
+    }
+  };
+
+  const speakText = async (text: string, enableFutureQuestions = false) => {
+    const cleanText = text.trim();
+    if (!cleanText) {
+      setSessionStatus('No question available to speak yet');
+      return;
+    }
+
+    if (enableFutureQuestions) {
+      setVoiceEnabled(true);
+    }
+
+    pendingSpeechTextRef.current = cleanText;
+
+    try {
+      await unlockAudioOutput();
+    } catch {
+      // Browser voice fallback still works even if Web Audio cannot be unlocked.
+    }
+
+    if (socketRef.current?.readyState !== WebSocket.OPEN) {
+      setSessionStatus('Live voice channel is not connected. Using browser voice.');
+      speakWithBrowser(cleanText);
+      return;
+    }
+
+    if (speechTimeoutRef.current) {
+      window.clearTimeout(speechTimeoutRef.current);
+    }
+
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    pendingSpeechRequestRef.current = requestId;
+
+    speechTimeoutRef.current = window.setTimeout(() => {
+      setSessionStatus('No ElevenLabs voice response from backend. Using browser voice.');
+      speakWithBrowser(cleanText);
+    }, 12000);
+
+    setSessionStatus('Generating ElevenLabs interviewer voice...');
+    socketRef.current.send(JSON.stringify({
+      type: 'speak',
+      text: cleanText,
+      request_id: requestId,
+    }));
   };
 
   useEffect(() => {
@@ -260,15 +494,50 @@ const InterviewPage: React.FC = () => {
     );
   };
 
-  const sendAudioBlob = async (blob: Blob) => {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      setSessionStatus('Live session is not connected');
+  const sendAudioBlob = async (blob: Blob, durationSec?: number) => {
+    const question = currentQuestion.text?.trim();
+    if (!interviewId || !question) {
+      setSessionStatus('No active question is available for evaluation');
       return;
     }
 
-    const buffer = await blob.arrayBuffer();
-    socketRef.current.send(buffer);
-    setSessionStatus('Answer sent. Waiting for evaluation...');
+    try {
+      setSessionStatus('Answer sent. Waiting for evaluation...');
+      const result = await api.interview.analyzeAudio(interviewId, question, blob, durationSec);
+
+      if (!result.success || !result.evaluation) {
+        setSessionStatus(result.error || 'Audio evaluation failed');
+        return;
+      }
+
+      const evaluation = result.evaluation;
+      setLatestEvaluation(evaluation);
+      setLatestScore(evaluation.score);
+      setLatestReasoning(evaluation.reasoning);
+      setLatestTranscript(evaluation.transcript);
+      if (result.session_cost) {
+        setSessionCost(result.session_cost);
+      }
+      interviewHistoryStore().update(interviewId, { overall_score: evaluation.score });
+
+      const nextOrder = questionNumber;
+      const nextQuestion = createLocalQuestion(
+        activeInterview?.interview_mode || 'faang',
+        activeInterview?.job_role || 'General role',
+        nextOrder,
+      );
+      setCurrentQuestion(nextQuestion);
+      setQuestionNumber(nextOrder + 1);
+      activeInterviewStore().update({
+        first_question: nextQuestion,
+      });
+      setSessionStatus('Answer evaluated. Next question is ready.');
+      if (voiceEnabled && nextQuestion.text) {
+        window.setTimeout(() => speakText(nextQuestion.text || ''), 0);
+      }
+    } catch (err) {
+      setSessionStatus(err instanceof ApiError ? err.message : 'Audio evaluation failed.');
+    }
   };
 
   const handleRecordToggle = () => {
@@ -297,10 +566,15 @@ const InterviewPage: React.FC = () => {
 
     recorder.onstop = () => {
       const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-      sendAudioBlob(blob);
+      const durationSec = recordingStartedAtRef.current
+        ? (Date.now() - recordingStartedAtRef.current) / 1000
+        : undefined;
+      recordingStartedAtRef.current = null;
+      sendAudioBlob(blob, durationSec);
     };
 
     recorder.start();
+    recordingStartedAtRef.current = Date.now();
     setIsMuted(false);
     setIsRecording(true);
     setSessionStatus('Recording answer...');
@@ -319,8 +593,46 @@ const InterviewPage: React.FC = () => {
     setSessionStatus('Interview link copied');
   };
 
-  const handleEndInterview = () => {
+  const handleEndInterview = async () => {
+    try {
+      let finalBehaviorSummary = behaviorSummary;
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'summary' }));
+      }
+
+      if (interviewId) {
+        const summary = await api.interview.behaviorSummary(interviewId);
+        if (summary.success && summary.summary) {
+          finalBehaviorSummary = summary.summary;
+          setBehaviorSummary(summary.summary);
+        }
+        const completed = await api.interview.complete(interviewId, latestScore, finalBehaviorSummary);
+        setSessionCost(completed.session_cost);
+        interviewHistoryStore().update(interviewId, {
+          status: 'completed',
+          overall_score: latestScore,
+          completed_at: new Date().toISOString(),
+        });
+      }
+    } catch {
+      if (interviewId) {
+        interviewHistoryStore().update(interviewId, {
+          status: 'completed',
+          overall_score: latestScore,
+          completed_at: new Date().toISOString(),
+        });
+      }
+    }
     socketRef.current?.close();
+    if (speechTimeoutRef.current) {
+      window.clearTimeout(speechTimeoutRef.current);
+    }
+    audioSourceRef.current?.stop();
+    interviewerAudioRef.current?.pause();
+    if (interviewerAudioUrlRef.current) {
+      URL.revokeObjectURL(interviewerAudioUrlRef.current);
+    }
+    audioContextRef.current?.close();
     activeInterviewStore().clear();
     navigate('/home');
   };
@@ -455,9 +767,9 @@ const InterviewPage: React.FC = () => {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.5 }}
             >
-              <p className={styles.checkItem}>✓ Backend session id: {interviewId || 'none'}</p>
-              <p className={styles.checkItem}>✓ {connected ? 'WebSocket connected' : 'Waiting for WebSocket'}</p>
-              <p className={styles.checkItem}>✓ {latestReasoning || 'Answer scoring appears here after audio is sent.'}</p>
+              <p className={styles.checkItem}>Backend session id: {interviewId || 'none'}</p>
+              <p className={styles.checkItem}>{connected ? 'WebSocket connected' : 'Waiting for WebSocket'}</p>
+              <p className={styles.checkItem}>{latestReasoning || 'Answer scoring appears here after audio is sent.'}</p>
             </motion.div>
           </motion.div>
 
@@ -560,6 +872,31 @@ const InterviewPage: React.FC = () => {
           </motion.div>
 
           <motion.div
+            className={styles.costSection}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.25 }}
+          >
+            <h3>API Cost</h3>
+            <div className={styles.costTotal}>
+              ₹{(sessionCost?.total_cost_inr || 0).toFixed(4)}
+            </div>
+            <div className={styles.costMeta}>
+              <span>{sessionCost?.calls || 0} calls</span>
+              <span>{sessionCost?.total_tokens || 0} tokens</span>
+            </div>
+            <div className={styles.costBreakdown}>
+              {costRows.length === 0 && <p>No paid API calls recorded yet.</p>}
+              {costRows.map((item) => (
+                <div key={item.name}>
+                  <span>{item.name.replace(/_/g, ' ')}</span>
+                  <strong>₹{item.amount.toFixed(4)}</strong>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div
             className={styles.waveformSection}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -591,6 +928,24 @@ const InterviewPage: React.FC = () => {
                 🔴
               </motion.span>
             </div>
+            {latestTranscript && (
+              <p className={styles.transcriptText}>{latestTranscript}</p>
+            )}
+          </motion.div>
+
+          <motion.div
+            className={styles.behaviorSection}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.35 }}
+          >
+            <h3>Camera Behavior</h3>
+            <div className={styles.behaviorGrid}>
+              <span>Engagement: {latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement ?? 0}</span>
+              <span>Eye contact: {behaviorSummary?.eye_contact_ratio ?? (latestBehavior?.eye_contact ? 100 : 0)}%</span>
+              <span>Emotion: {behaviorSummary?.dominant_emotion || latestBehavior?.emotion || 'neutral'}</span>
+            </div>
+            <p>{behaviorSummary?.behavior_summary || latestBehavior?.notes || 'Camera snapshots are analyzed while the interview is open.'}</p>
           </motion.div>
 
           <motion.div

@@ -147,6 +147,12 @@ CREATE TABLE ai_costs (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE INDEX idx_ai_costs_interview_created
+    ON ai_costs (interview_id, created_at DESC);
+
+CREATE INDEX idx_ai_costs_created_at
+    ON ai_costs (created_at DESC);
+
 -- Step 13: Prompt templates table
 CREATE TABLE prompt_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

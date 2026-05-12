@@ -32,6 +32,7 @@ export type Resume = {
   id: string;
   file_name?: string;
   parsed_json?: ParsedResume;
+  raw_text?: string;
   created_at?: string;
 };
 
@@ -47,7 +48,7 @@ export type InterviewMode = 'faang' | 'startup' | 'hr';
 export type InterviewRecord = {
   id: string;
   resume_id?: string;
-  job_role: string;
+  job_role?: string;
   interview_mode: InterviewMode;
   status: 'in_progress' | 'completed' | 'aborted';
   overall_score?: number | null;
@@ -67,10 +68,15 @@ export type InterviewQuestion = {
 };
 
 export type StartInterviewResponse = {
+  success: boolean;
   interview_id: string;
   first_question: InterviewQuestion;
   persona_name: string;
   opening_line: string;
+  job_role: string;
+  interview_mode: InterviewMode;
+  resume_id?: string;
+  created_at: string;
 };
 
 export type DashboardResponse = {
@@ -106,6 +112,125 @@ export type Report = {
   strengths?: string[];
   next_session_focus?: string[];
   created_at?: string;
+};
+
+export type AdminDashboardResponse = {
+  total_interviews: number;
+  completed_interviews: number;
+  average_score: number;
+  total_users: number;
+  today_cost_inr: number;
+};
+
+export type CostRecord = {
+  interview_id?: string | null;
+  model: string;
+  call_type: string;
+  cost_inr: number;
+  tokens_in: number;
+  tokens_out: number;
+  latency_ms?: number | null;
+  created_at?: string;
+};
+
+export type CostSummary = {
+  interview_id?: string;
+  total_cost_inr: number;
+  total_tokens: number;
+  calls: number;
+  by_call_type: Record<string, number>;
+  records?: CostRecord[];
+};
+
+export type CostsResponse = {
+  days: number;
+  total_cost_inr: number;
+  total_tokens: number;
+  records: CostRecord[];
+};
+
+export type MetricsResponse = {
+  status: string;
+  redis_connected?: boolean;
+  redis_memory?: string;
+  redis_error?: string;
+};
+
+export type AudioEvaluation = {
+  transcript: string;
+  score: number;
+  accuracy_score: number;
+  clarity_score: number;
+  depth_score: number;
+  confidence_score: number;
+  communication_score: number;
+  reasoning: string;
+  provider?: string;
+  model?: string;
+};
+
+export type AnalyzeAudioResponse = {
+  success: boolean;
+  evaluation?: AudioEvaluation;
+  cost?: CostRecord | null;
+  session_cost?: CostSummary;
+  error?: string;
+};
+
+export type BehaviorAnalysis = {
+  engagement_score: number;
+  confidence_score: number;
+  nervousness_score: number;
+  professionalism_score: number;
+  eye_contact: boolean;
+  looking_away: boolean;
+  distracted: boolean;
+  expression: string;
+  emotion: string;
+  posture: string;
+  confidence_level: string;
+  notes: string;
+};
+
+export type BehaviorSummary = {
+  overall_engagement: number;
+  overall_confidence: number;
+  overall_professionalism: number;
+  overall_nervousness: number;
+  eye_contact_ratio: number;
+  distraction_ratio: number;
+  dominant_emotion: string;
+  behavior_summary: string;
+};
+
+export type AnalyzeFrameResponse = {
+  success: boolean;
+  analysis?: BehaviorAnalysis;
+  cost?: CostRecord | null;
+  session_cost?: CostSummary;
+  error?: string;
+};
+
+export type BehaviorSummaryResponse = {
+  success: boolean;
+  summary?: BehaviorSummary;
+  error?: string;
+};
+
+type StartInterviewRouteResponse = {
+  success: boolean;
+  interview_id: string;
+  created_at: string;
+};
+
+type GoogleAuthResponse = {
+  url: string;
+};
+
+export type CompleteInterviewResponse = {
+  success: boolean;
+  interview_id: string;
+  session_cost: CostSummary;
 };
 
 export class ApiError extends Error {
@@ -156,10 +281,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch {
+    throw new ApiError('Backend is not reachable. Make sure the API server is running on port 8000.', 0);
+  }
 
   if (!response.ok) {
     throw new ApiError(await parseError(response), response.status);
@@ -183,6 +313,102 @@ const buildWsUrl = (path: string) => {
   apiUrl.search = '';
   return apiUrl.toString();
 };
+
+const interviewRouteBase = '/interview/interview';
+
+const personaByMode: Record<InterviewMode, { name: string; openingLine: string; starter: string }> = {
+  faang: {
+    name: 'Alex (FAANG Interviewer)',
+    openingLine: "Hi, I'm Alex. Today we'll go deep on your technical skills. Let's begin.",
+    starter: 'Walk me through one technically challenging project from your resume. What trade-offs did you make, and how did you validate the result?',
+  },
+  startup: {
+    name: 'Priya (Startup Founder)',
+    openingLine: "Hey! I'm Priya. Tell me about something you built and shipped. I want to hear the real story.",
+    starter: 'Tell me about a product or feature you shipped under constraints. What did you prioritize, and what would you improve now?',
+  },
+  hr: {
+    name: 'Riya (HR Manager)',
+    openingLine: "Hello! I'm Riya, and I'm excited to learn more about you today. Let's get started.",
+    starter: 'Tell me about yourself and a recent experience that shows how you work with a team.',
+  },
+};
+
+export const interviewQuestionBank: Record<InterviewMode, string[]> = {
+  faang: [
+    personaByMode.faang.starter,
+    'Describe a difficult bug or performance issue you solved. How did you isolate the root cause?',
+    'Pick a system you have built. How would you scale it if usage increased by 10x?',
+    'Tell me about an edge case you almost missed and how you handled it.',
+  ],
+  startup: [
+    personaByMode.startup.starter,
+    'Tell me about a time you had to move fast with incomplete information. What did you do?',
+    'What is one product decision you influenced, and how did you measure whether it worked?',
+    'Describe a moment when you took ownership beyond your assigned role.',
+  ],
+  hr: [
+    personaByMode.hr.starter,
+    'Tell me about a time you handled conflict with a teammate or stakeholder.',
+    'Describe a failure or setback. What did you learn, and what changed afterward?',
+    'What kind of work environment helps you do your best work?',
+  ],
+};
+
+const createQuestion = (
+  mode: InterviewMode,
+  jobRole: string,
+  orderIdx = 0,
+): InterviewQuestion => ({
+  text: interviewQuestionBank[mode][orderIdx % interviewQuestionBank[mode].length],
+  category: mode === 'hr' ? 'Behavioral' : 'Interview',
+  topic: jobRole || 'General',
+  difficulty: orderIdx === 0 ? 'warmup' : 'adaptive',
+  why_asked: 'This frontend question is sent to the backend audio evaluator for scoring.',
+  order_idx: orderIdx,
+});
+
+export function createLocalQuestion(mode: InterviewMode, jobRole: string, orderIdx: number) {
+  return createQuestion(mode, jobRole, orderIdx);
+}
+
+export function normalizeDashboard(
+  admin: AdminDashboardResponse,
+  resumes: Resume[] = [],
+  recentInterviews: InterviewRecord[] = [],
+): DashboardResponse {
+  const average = admin.average_score || 0;
+
+  return {
+    stats: {
+      total_interviews: admin.total_interviews || recentInterviews.length,
+      completed_interviews: admin.completed_interviews || recentInterviews.filter((item) => item.status === 'completed').length,
+      average_score: average,
+      overall_readiness: Math.round(average),
+      weakest_topic: recentInterviews.length ? 'Review recent answer feedback' : 'Start with a mock interview',
+      resume_count: resumes.length,
+    },
+    score_trend: recentInterviews
+      .filter((item) => typeof item.overall_score === 'number')
+      .slice(-6)
+      .map((item, index) => ({
+        name: item.created_at ? formatDate(item.created_at) : `Session ${index + 1}`,
+        score: item.overall_score || 0,
+      })),
+    activities: [
+      { name: 'Users', value: admin.total_users || 0 },
+      { name: 'Resumes', value: resumes.length },
+      { name: 'Completed', value: admin.completed_interviews || 0 },
+    ],
+    recent_interviews: recentInterviews,
+    recommendations: [
+      { title: 'Upload a resume', description: 'Personalize the practice flow with parsed resume data.' },
+      { title: 'Record an answer', description: 'Send audio to the backend evaluator and review the transcript.' },
+      { title: 'Check camera behavior', description: 'Let the backend summarize eye contact and engagement.' },
+    ],
+    resumes,
+  };
+}
 
 const healthUrl = () => {
   const apiUrl = new URL(API_BASE_URL, window.location.origin);
@@ -209,6 +435,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ access_token }),
       }),
+    google: () => request<GoogleAuthResponse>('/auth/google'),
     me: () => request<UserProfile>('/auth/me'),
   },
   resume: {
@@ -221,22 +448,65 @@ export const api = {
         body,
       });
     },
+    get: (resumeId: string) => request<Resume>(`/resume/${resumeId}`),
     delete: (resumeId: string) =>
       request<{ message: string }>(`/resume/${resumeId}`, {
         method: 'DELETE',
       }),
   },
   interview: {
-    dashboard: () => request<DashboardResponse>('/interview/dashboard'),
-    history: () => request<{ interviews: InterviewRecord[] }>('/interview/history'),
-    start: (resume_id: string, job_role: string, interview_mode: InterviewMode) =>
-      request<StartInterviewResponse>('/interview/start', {
+    health: () => request<{ status: string; service: string }>(`${interviewRouteBase}/health`),
+    start: async (resume_id: string, job_role: string, interview_mode: InterviewMode) => {
+      const result = await request<StartInterviewRouteResponse>(`${interviewRouteBase}/start`, {
         method: 'POST',
         body: JSON.stringify({ resume_id, job_role, interview_mode }),
+      });
+      const persona = personaByMode[interview_mode];
+
+      return {
+        ...result,
+        first_question: createQuestion(interview_mode, job_role),
+        persona_name: persona.name,
+        opening_line: persona.openingLine,
+        job_role,
+        interview_mode,
+        resume_id,
+        created_at: result.created_at || new Date().toISOString(),
+      } satisfies StartInterviewResponse;
+    },
+    analyzeFrame: (interviewId: string, file: Blob) => {
+      const body = new FormData();
+      body.append('interview_id', interviewId);
+      body.append('file', file, 'frame.jpg');
+      return request<AnalyzeFrameResponse>(`${interviewRouteBase}/analyze-frame`, {
+        method: 'POST',
+        body,
+      });
+    },
+    analyzeAudio: (interviewId: string, question: string, file: Blob, durationSec?: number) => {
+      const body = new FormData();
+      body.append('interview_id', interviewId);
+      body.append('question', question);
+      if (typeof durationSec === 'number') {
+        body.append('duration_sec', String(durationSec));
+      }
+      body.append('file', file, 'answer.webm');
+      return request<AnalyzeAudioResponse>(`${interviewRouteBase}/analyze-audio`, {
+        method: 'POST',
+        body,
+      });
+    },
+    behaviorSummary: (interviewId: string) =>
+      request<BehaviorSummaryResponse>(`${interviewRouteBase}/behavior-summary/${interviewId}`),
+    complete: (interviewId: string, overall_score?: number | null, behavior_summary?: BehaviorSummary | null) =>
+      request<CompleteInterviewResponse>(`${interviewRouteBase}/${interviewId}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({
+          overall_score: typeof overall_score === 'number' ? overall_score : null,
+          behavior_summary: behavior_summary || null,
+        }),
       }),
-    status: (interviewId: string) =>
-      request<InterviewStatusResponse>(`/interview/${interviewId}/status`),
-    socketUrl: (interviewId: string) => buildWsUrl(`/interview/${interviewId}/session`),
+    socketUrl: (interviewId: string) => buildWsUrl(`${interviewRouteBase}/ws/interview/${interviewId}`),
   },
   report: {
     get: (interviewId: string) => request<Report>(`/report/${interviewId}`),
@@ -250,6 +520,11 @@ export const api = {
       }
       return response.blob();
     },
+  },
+  admin: {
+    dashboard: () => request<AdminDashboardResponse>('/admin/dashboard'),
+    costs: (days = 7) => request<CostsResponse>(`/admin/costs?days=${days}`),
+    metrics: () => request<MetricsResponse>('/admin/metrics'),
   },
 };
 
@@ -274,6 +549,35 @@ export function activeInterviewStore() {
       return raw ? JSON.parse(raw) as StartInterviewResponse : null;
     },
     set: (value: StartInterviewResponse) => sessionStorage.setItem(key, JSON.stringify(value)),
+    update: (patch: Partial<StartInterviewResponse>) => {
+      const raw = sessionStorage.getItem(key);
+      const current = raw ? JSON.parse(raw) as StartInterviewResponse : null;
+      if (current) {
+        sessionStorage.setItem(key, JSON.stringify({ ...current, ...patch }));
+      }
+    },
     clear: () => sessionStorage.removeItem(key),
+  };
+}
+
+export function interviewHistoryStore() {
+  const key = 'intervue_browser_interviews';
+
+  return {
+    list: (): InterviewRecord[] => {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) as InterviewRecord[] : [];
+    },
+    upsert: (value: InterviewRecord) => {
+      const current = interviewHistoryStore().list();
+      const next = [value, ...current.filter((item) => item.id !== value.id)].slice(0, 12);
+      localStorage.setItem(key, JSON.stringify(next));
+    },
+    update: (interviewId: string, patch: Partial<InterviewRecord>) => {
+      const next = interviewHistoryStore().list().map((item) =>
+        item.id === interviewId ? { ...item, ...patch } : item,
+      );
+      localStorage.setItem(key, JSON.stringify(next));
+    },
   };
 }

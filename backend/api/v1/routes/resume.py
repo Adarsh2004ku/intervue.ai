@@ -118,7 +118,26 @@ async def get_resume(resume_id: str, user: dict = Depends(get_current_user)):
 @router.delete("/{resume_id}")
 async def delete_resume(resume_id: str, user: dict = Depends(get_current_user)):
     """Delete resume and all associated chunks."""
-    supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
-    supabase.table("resumes").delete().eq("id", resume_id).execute()
-    logger.info("resume_deleted", resume_id=resume_id)
-    return {"message": "Resume deleted successfully"}
+    try:
+        # Verify user owns this resume
+        result = supabase.table("resumes").select("user_id").eq("id", resume_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Resume not found")
+        
+        if result.data[0]["user_id"] != user["sub"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Unauthorized - you can only delete your own resumes"
+            )
+        
+        # Delete resume and associated chunks
+        supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
+        supabase.table("resumes").delete().eq("id", resume_id).execute()
+        logger.info("resume_deleted", resume_id=resume_id, user_id=user["sub"])
+        return {"message": "Resume deleted successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("resume_deletion_failed", resume_id=resume_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete resume")

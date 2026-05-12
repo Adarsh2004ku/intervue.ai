@@ -15,47 +15,132 @@ ENV_FILE_PATH = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
-    # LLM Providers
+    """
+    Application settings loaded from environment variables.
+    
+    Configuration priority:
+    1. Environment variables
+    2. .env file in backend/ directory
+    3. Default values
+    """
+    
+    # =====================================================
+    # LLM PROVIDERS (REQUIRED)
+    # =====================================================
     google_api_key: str
+    """Google Gemini API key - get from https://aistudio.google.com/apikey"""
+    
     groq_api_key: str = ""
+    """Groq API key - optional fallback provider"""
 
-    # LangSmith
-    langchain_tracing_v2: bool = True
+    elevenlabs_api_key: str = ""
+    """ElevenLabs API key - used for speech-to-text transcription"""
+
+    elevenlabs_stt_model: str = "scribe_v2"
+    """ElevenLabs speech-to-text model"""
+
+    elevenlabs_voice_id: str = "JBFqnCBsd6RMkjVDRZzb"
+    """ElevenLabs voice ID used for interviewer speech"""
+
+    elevenlabs_tts_model: str = "eleven_flash_v2_5"
+    """ElevenLabs text-to-speech model"""
+
+    elevenlabs_output_format: str = "mp3_44100_128"
+    """ElevenLabs generated speech output format"""
+
+    # =====================================================
+    # LANGSMITH (Optional - for AI observability)
+    # =====================================================
+    langchain_tracing_v2: bool = False
+    """Enable LangSmith tracing for debugging"""
+    
     langsmith_api_key: str = ""
+    """LangSmith API key - get from https://smith.langchain.com"""
+    
     langsmith_project: str = "intervue-ai"
+    """LangSmith project name"""
 
-    # Supabase
+    # =====================================================
+    # SUPABASE (REQUIRED - Database & Auth)
+    # =====================================================
     supabase_url: str
+    """Supabase project URL"""
+    
     supabase_key: str
+    """Supabase anonymous key"""
+    
     supabase_service_key: str
+    """Supabase service role key (keep secret)"""
+    
     database_url: str = ""
+    """PostgreSQL connection string (optional direct access)"""
 
-    # Redis
+    # =====================================================
+    # REDIS (for task queue & caching)
+    # =====================================================
     redis_url: str = "redis://localhost:6379/0"
+    """Redis connection URL for Celery and caching"""
 
-    # Auth
+    # =====================================================
+    # JWT AUTHENTICATION
+    # =====================================================
     jwt_secret: str
+    """Secret key for JWT signing"""
+    
     jwt_algorithm: str = "HS256"
+    """JWT algorithm (HS256 is standard)"""
+    
     jwt_expiry_minutes: int = 10080  # 7 days
+    """JWT token expiry duration"""
 
-    # App
+    # =====================================================
+    # APPLICATION CONFIGURATION
+    # =====================================================
     environment: str = "development"
+    """Environment: development, staging, production"""
+    
     frontend_url: str = "http://localhost:3000"
+    """Frontend application URL (used for OAuth redirects)"""
+    
     cors_origins: str = "http://localhost:3000"
+    """Comma-separated list of allowed CORS origins"""
+    
+    log_level: str = "INFO"
+    """Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL"""
 
-    # LLM Config
-    primary_llm: str = "gemini-2.5-flash"
-    embedding_model: str = "gemini-embedding-001"  
+    # =====================================================
+    # LLM MODEL CONFIGURATION
+    # =====================================================
+    primary_llm: str = "gemini-2.0-flash-exp"
+    """Primary LLM for interview generation (updated from gemini-2.5-flash)"""
+    
+    embedding_model: str = "text-embedding-004"
+    """Embedding model for resume parsing (updated from gemini-embedding-001)"""
+    
     embedding_dimension: int = 768
+    """Vector dimension for embeddings"""
 
-    # Interview Config
+    # =====================================================
+    # INTERVIEW CONFIGURATION
+    # =====================================================
     max_questions_per_interview: int = 10
+    """Maximum questions per interview"""
+    
     max_tokens_per_interview: int = 50000
+    """Max tokens allowed per interview (cost control)"""
+
+    api_cost_usd_to_inr: float = 83.0
+    """USD to INR rate used for API cost estimates"""
+    
     weak_score_threshold: int = 60
+    """Score threshold for weak areas (0-100)"""
+    
     strong_score_threshold: int = 75
+    """Score threshold for strong areas (0-100)"""
 
     @property
     def cors_origin_list(self) -> List[str]:
+        """Parse comma-separated CORS origins into a list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
     model_config = SettingsConfigDict(

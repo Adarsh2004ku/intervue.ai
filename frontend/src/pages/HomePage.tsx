@@ -5,13 +5,17 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { useNavigate } from 'react-router-dom';
 import {
   ApiError,
+  CostsResponse,
   DashboardResponse,
   InterviewMode,
+  MetricsResponse,
   Resume,
   UserProfile,
   activeInterviewStore,
   api,
   formatDate,
+  interviewHistoryStore,
+  normalizeDashboard,
   tokenStore,
 } from '../services/api';
 import styles from './HomePage.module.css';
@@ -40,6 +44,8 @@ const HomePage: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [costs, setCosts] = useState<CostsResponse | null>(null);
+  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
   const [interviewMode, setInterviewMode] = useState<InterviewMode>('faang');
@@ -59,15 +65,50 @@ const HomePage: React.FC = () => {
     const loadDashboard = async () => {
       try {
         setLoading(true);
-        const [me, dashboardData, resumeData] = await Promise.all([
-          api.auth.me(),
-          api.interview.dashboard(),
+        const localInterviews = interviewHistoryStore().list();
+        const me = await api.auth.me();
+        const [adminResult, resumeResult, costsResult, metricsResult] = await Promise.allSettled([
+          api.admin.dashboard(),
           api.resume.list(),
+          api.admin.costs(7),
+          api.admin.metrics(),
+          api.interview.health(),
         ]);
+
+        const adminData = adminResult.status === 'fulfilled'
+          ? adminResult.value
+          : {
+              total_interviews: localInterviews.length,
+              completed_interviews: localInterviews.filter((item) => item.status === 'completed').length,
+              average_score: 0,
+              total_users: 0,
+              today_cost_inr: 0,
+            };
+        const resumeData = resumeResult.status === 'fulfilled'
+          ? resumeResult.value
+          : { resumes: [] };
+        const costsData = costsResult.status === 'fulfilled'
+          ? costsResult.value
+          : null;
+        const metricsData = metricsResult.status === 'fulfilled'
+          ? metricsResult.value
+          : null;
+        const dashboardData = normalizeDashboard(adminData, resumeData.resumes, localInterviews);
+
         setProfile(me);
         setDashboard(dashboardData);
         setResumes(resumeData.resumes);
+        setCosts(costsData);
+        setMetrics(metricsData);
         setSelectedResumeId(resumeData.resumes[0]?.id || dashboardData.resumes[0]?.id || '');
+        if (
+          adminResult.status === 'rejected'
+          || resumeResult.status === 'rejected'
+          || costsResult.status === 'rejected'
+          || metricsResult.status === 'rejected'
+        ) {
+          setStatus('Logged in. Some dashboard data is temporarily unavailable.');
+        }
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           tokenStore.clear();
@@ -114,13 +155,20 @@ const HomePage: React.FC = () => {
       color: '#f59e0b',
     },
     {
-      label: 'Focus Topic',
-      value: dashboard.stats.weakest_topic,
-      status: 'Recommended focus',
-      trend: 'From your topic profile',
+      label: 'AI Spend',
+      value: `₹${(costs?.total_cost_inr ?? costs?.records.reduce((total, item) => total + (item.cost_inr || 0), 0) ?? 0).toFixed(2)}`,
+      status: 'Last 7 days',
+      trend: `${costs?.records.length || 0} calls · ${costs?.total_tokens || 0} tokens`,
       color: '#ec4899',
     },
-  ], [dashboard]);
+    {
+      label: 'API Health',
+      value: metrics?.status || 'Checking',
+      status: metrics?.redis_connected ? `Redis ${metrics.redis_memory || 'connected'}` : 'Redis unavailable',
+      trend: metrics?.redis_error || 'Backend metrics route connected',
+      color: '#0891b2',
+    },
+  ], [costs, dashboard, metrics]);
 
   const handleLogout = () => {
     tokenStore.clear();
@@ -150,6 +198,49 @@ const HomePage: React.FC = () => {
     }
   };
 
+  const handleSelectResume = async (resumeId: string) => {
+    setSelectedResumeId(resumeId);
+
+    if (!resumeId) {
+      return;
+    }
+
+    try {
+      const resume = await api.resume.get(resumeId);
+      setResumes((current) => current.map((item) => (item.id === resumeId ? { ...item, ...resume } : item)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to load resume details.');
+    }
+  };
+
+  const handleDeleteResume = async () => {
+    if (!selectedResumeId) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.resume.delete(selectedResumeId);
+      const freshResumes = await api.resume.list();
+      setResumes(freshResumes.resumes);
+      setSelectedResumeId(freshResumes.resumes[0]?.id || '');
+      setDashboard((current) => normalizeDashboard(
+        {
+          total_interviews: current.stats.total_interviews,
+          completed_interviews: current.stats.completed_interviews,
+          average_score: current.stats.average_score,
+          total_users: Number(current.activities.find((item) => item.name === 'Users')?.value || 0),
+          today_cost_inr: 0,
+        },
+        freshResumes.resumes,
+        current.recent_interviews,
+      ));
+      setStatus('Resume deleted.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to delete resume.');
+    }
+  };
+
   const handleStartInterview = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -164,6 +255,16 @@ const HomePage: React.FC = () => {
       setStatus('Starting interview session...');
       const started = await api.interview.start(selectedResumeId, jobRole, interviewMode);
       activeInterviewStore().set(started);
+      interviewHistoryStore().upsert({
+        id: started.interview_id,
+        resume_id: started.resume_id,
+        job_role: started.job_role,
+        interview_mode: started.interview_mode,
+        status: 'in_progress',
+        overall_score: null,
+        created_at: started.created_at,
+        completed_at: null,
+      });
       navigate(`/interview?interviewId=${started.interview_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to start interview.');
@@ -376,7 +477,7 @@ const HomePage: React.FC = () => {
                 <input type="file" accept=".pdf,.docx" onChange={handleResumeUpload} disabled={uploading} />
               </label>
             </div>
-            <select value={selectedResumeId} onChange={(event) => setSelectedResumeId(event.target.value)}>
+            <select value={selectedResumeId} onChange={(event) => handleSelectResume(event.target.value)}>
               <option value="">Select a resume</option>
               {resumes.map((resume) => (
                 <option key={resume.id} value={resume.id}>
@@ -421,7 +522,7 @@ const HomePage: React.FC = () => {
                   key={resume.id}
                   type="button"
                   className={`${styles.resumeItem} ${selectedResumeId === resume.id ? styles.selectedResume : ''}`}
-                  onClick={() => setSelectedResumeId(resume.id)}
+                  onClick={() => handleSelectResume(resume.id)}
                 >
                   <strong>{resume.file_name || 'Resume'}</strong>
                   <span>{formatDate(resume.created_at)}</span>
@@ -431,7 +532,12 @@ const HomePage: React.FC = () => {
 
             {selectedResume && (
               <div className={styles.resumeDetails}>
-                <h4>{selectedResume.file_name || 'Selected resume'}</h4>
+                <div className={styles.resumeDetailsHeader}>
+                  <h4>{selectedResume.file_name || 'Selected resume'}</h4>
+                  <button type="button" className={styles.smallAction} onClick={handleDeleteResume}>
+                    Delete
+                  </button>
+                </div>
                 <p>{selectedResume.parsed_json?.summary || 'Parsed resume data will appear here after upload.'}</p>
                 <div className={styles.chipGroup}>
                   {(selectedResume.parsed_json?.skills || []).slice(0, 12).map((skill) => (

@@ -50,11 +50,24 @@ async def get_costs(days: int = 7):
     from datetime import timedelta
     start_date = str(date.today() - timedelta(days=days))
 
-    result = supabase.table("ai_costs").select(
-        "model, cost_inr, tokens_in, tokens_out, created_at"
-    ).gte("created_at", start_date).execute()
+    result = (
+        supabase.table("ai_costs")
+        .select("interview_id, model, call_type, cost_inr, tokens_in, tokens_out, latency_ms, created_at")
+        .gte("created_at", start_date)
+        .order("created_at", desc=True)
+        .execute()
+    )
 
-    return {"days": days, "records": result.data or []}
+    records = result.data or []
+    return {
+        "days": days,
+        "total_cost_inr": round(sum(item.get("cost_inr", 0) for item in records), 4),
+        "total_tokens": sum(
+            (item.get("tokens_in", 0) or 0) + (item.get("tokens_out", 0) or 0)
+            for item in records
+        ),
+        "records": records,
+    }
 
 
 @router.get("/metrics")

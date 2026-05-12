@@ -1,196 +1,228 @@
-import asyncio
-import base64
-import json
+import re
+from statistics import mean
 
-from google import genai
+import httpx
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
 
 
-logger = get_logger("gemini_stt")
+logger = get_logger("elevenlabs_stt")
+
+ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
+
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "i",
+    "in",
+    "is",
+    "it",
+    "me",
+    "my",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "what",
+    "when",
+    "where",
+    "with",
+    "you",
+    "your",
+}
+
+FILLER_WORDS = {
+    "um",
+    "uh",
+    "erm",
+    "hmm",
+    "like",
+    "basically",
+    "actually",
+    "literally",
+}
 
 
-# =========================================================
-# Gemini Client
-# =========================================================
-client = genai.Client(
-    api_key=settings.google_api_key
-)
+def _clamp_score(value: float) -> int:
+    return max(0, min(100, round(value)))
 
 
-# =========================================================
-# Internal Sync Function
-# =========================================================
-def _generate_content(model: str, contents):
+def _keywords(text: str) -> set[str]:
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9+#.-]*", text.lower())
+    return {
+        word
+        for word in words
+        if len(word) > 2 and word not in STOP_WORDS
+    }
 
-    return client.models.generate_content(
-        model=model,
-        contents=contents,
-        config={
-            "temperature": 0.2,
-            "top_p": 0.8,
-        }
+
+def _extract_transcript(response: dict) -> str:
+    text = response.get("text")
+    if isinstance(text, str):
+        return text.strip()
+
+    transcripts = response.get("transcripts")
+    if isinstance(transcripts, list):
+        return " ".join(
+            item.get("text", "")
+            for item in transcripts
+            if isinstance(item, dict)
+        ).strip()
+
+    return ""
+
+
+def _average_word_confidence(words: list[dict]) -> float | None:
+    scores = []
+    for word in words:
+        logprob = word.get("logprob")
+        if isinstance(logprob, (int, float)):
+            scores.append(max(0.0, min(1.0, 1 + (logprob / 5))))
+
+    if not scores:
+        return None
+
+    return mean(scores)
+
+
+def _evaluate_transcript(transcript: str, question: str, stt_response: dict) -> dict:
+    answer_words = re.findall(r"[a-zA-Z][a-zA-Z0-9']*", transcript.lower())
+    word_count = len(answer_words)
+    filler_count = sum(1 for word in answer_words if word in FILLER_WORDS)
+
+    question_keywords = _keywords(question)
+    answer_keywords = _keywords(transcript)
+    keyword_overlap = (
+        len(question_keywords & answer_keywords) / len(question_keywords)
+        if question_keywords
+        else 0
     )
 
+    words = stt_response.get("words")
+    word_confidence = _average_word_confidence(words if isinstance(words, list) else [])
+    language_probability = stt_response.get("language_probability")
+    if not isinstance(language_probability, (int, float)):
+        language_probability = word_confidence if word_confidence is not None else 0.75
 
-# =========================================================
-# Transcribe Audio
-# =========================================================
-async def transcribe_audio(
+    filler_ratio = filler_count / word_count if word_count else 1
+    depth_score = _clamp_score(min(1, word_count / 90) * 100)
+    clarity_score = _clamp_score((language_probability * 100) - (filler_ratio * 120))
+    accuracy_score = _clamp_score(45 + (keyword_overlap * 35) + (depth_score * 0.2))
+    confidence_score = _clamp_score(85 - (filler_ratio * 250) + min(10, word_count / 20))
+    communication_score = _clamp_score(
+        (clarity_score + confidence_score + depth_score) / 3
+    )
+    score = _clamp_score(
+        (
+            accuracy_score
+            + clarity_score
+            + depth_score
+            + confidence_score
+            + communication_score
+        )
+        / 5
+    )
+
+    if not transcript:
+        reasoning = "ElevenLabs did not return a transcript for this answer."
+    else:
+        reasoning = (
+            f"ElevenLabs transcribed {word_count} words. "
+            f"Keyword overlap with the question was {round(keyword_overlap * 100)}%, "
+            f"with {filler_count} detected filler words."
+        )
+
+    return {
+        "transcript": transcript,
+        "score": score,
+        "accuracy_score": accuracy_score,
+        "clarity_score": clarity_score,
+        "depth_score": depth_score,
+        "confidence_score": confidence_score,
+        "communication_score": communication_score,
+        "reasoning": reasoning,
+        "provider": "elevenlabs",
+        "model": settings.elevenlabs_stt_model,
+    }
+
+
+async def _transcribe_with_elevenlabs(
     audio_bytes: bytes,
-    mime_type: str = "audio/wav"
-) -> str:
-    """
-    Transcribe audio bytes to text using Gemini.
-    """
+    mime_type: str,
+) -> dict:
+    if not settings.elevenlabs_api_key:
+        raise ValueError("ELEVENLABS_API_KEY is not configured")
 
-    try:
-
-        audio_b64 = base64.b64encode(
-            audio_bytes
-        ).decode("utf-8")
-
-        response = await asyncio.to_thread(
-            _generate_content,
-            "gemini-2.5-flash",
-            [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": audio_b64,
-                    }
-                },
-                (
-                    "Transcribe this audio exactly "
-                    "as spoken. Return ONLY transcript text."
-                ),
-            ]
+    files = {
+        "file": (
+            "answer.webm",
+            audio_bytes,
+            mime_type,
         )
+    }
+    data = {
+        "model_id": settings.elevenlabs_stt_model,
+        "tag_audio_events": "true",
+        "diarize": "false",
+    }
 
-        transcript = response.text.strip()
-
-        logger.info(
-            "audio_transcribed",
-            length=len(transcript),
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            ELEVENLABS_STT_URL,
+            headers={
+                "xi-api-key": settings.elevenlabs_api_key,
+            },
+            data=data,
+            files=files,
         )
-
-        return transcript
-
-    except Exception as e:
-
-        logger.exception(
-            "audio_transcription_failed",
-            error=str(e)
-        )
-
-        return ""
+        response.raise_for_status()
+        return response.json()
 
 
-# =========================================================
-# Transcribe + Evaluate
-# =========================================================
 async def transcribe_and_evaluate(
     audio_bytes: bytes,
     question: str,
-    mime_type: str = "audio/wav",
+    mime_type: str = "audio/webm",
 ) -> dict:
-    """
-    Transcribe audio and evaluate interview answer.
-    """
-
     try:
-
-        audio_b64 = base64.b64encode(
-            audio_bytes
-        ).decode("utf-8")
-
-        response = await asyncio.to_thread(
-            _generate_content,
-            "gemini-2.5-flash",
-            [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": audio_b64,
-                    }
-                },
-
-                f"""
-First transcribe this interview answer exactly.
-
-Then evaluate the answer for this question:
-
-\"{question}\"
-
-Return ONLY valid JSON:
-
-{{
-    "transcript": "exact spoken words",
-    "score": 75,
-    "accuracy_score": 80,
-    "clarity_score": 70,
-    "depth_score": 65,
-    "confidence_score": 78,
-    "communication_score": 72,
-    "reasoning": "brief evaluation"
-}}
-
-Scoring:
-- accuracy_score → factual correctness
-- clarity_score → communication quality
-- depth_score → understanding depth
-- confidence_score → speaking confidence
-- communication_score → professionalism
-- score → weighted average
-"""
-            ]
+        stt_response = await _transcribe_with_elevenlabs(
+            audio_bytes=audio_bytes,
+            mime_type=mime_type,
         )
-
-        raw = response.text.strip()
-
-        # Remove markdown
-        if raw.startswith("```"):
-            raw = (
-                raw.replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-
-        result = json.loads(raw)
+        transcript = _extract_transcript(stt_response)
+        result = _evaluate_transcript(
+            transcript=transcript,
+            question=question,
+            stt_response=stt_response,
+        )
 
         logger.info(
-            "audio_evaluated",
-            transcript_len=len(
-                result.get("transcript", "")
-            ),
-            score=result.get("score", 0),
+            "audio_transcribed_with_elevenlabs",
+            model=settings.elevenlabs_stt_model,
+            transcript_length=len(transcript),
         )
 
+        result["_billable"] = True
         return result
 
-    except json.JSONDecodeError as e:
-
-        logger.warning(
-            "gemini_json_parse_failed",
-            error=str(e),
-        )
-
-        return {
-            "transcript": "",
-            "score": 0,
-            "accuracy_score": 0,
-            "clarity_score": 0,
-            "depth_score": 0,
-            "confidence_score": 0,
-            "communication_score": 0,
-            "reasoning": "Failed to parse Gemini response",
-        }
-
     except Exception as e:
-
         logger.exception(
             "audio_evaluation_failed",
+            provider="elevenlabs",
             error=str(e),
         )
 
@@ -202,65 +234,8 @@ Scoring:
             "depth_score": 0,
             "confidence_score": 0,
             "communication_score": 0,
-            "reasoning": f"Evaluation failed: {str(e)}",
+            "reasoning": str(e),
+            "provider": "elevenlabs",
+            "model": settings.elevenlabs_stt_model,
+            "_billable": False,
         }
-
-
-# =========================================================
-# Retry Wrapper
-# =========================================================
-async def transcribe_and_evaluate_with_retry(
-    audio_bytes: bytes,
-    question: str,
-    max_retries: int = 3,
-):
-    """
-    Retry wrapper with exponential backoff.
-    """
-
-    for attempt in range(max_retries):
-
-        try:
-
-            return await transcribe_and_evaluate(
-                audio_bytes,
-                question,
-            )
-
-        except Exception as e:
-
-            if (
-                "429" in str(e)
-                and attempt < max_retries - 1
-            ):
-
-                wait_time = 2 ** attempt
-
-                logger.warning(
-                    "rate_limit_hit",
-                    attempt=attempt + 1,
-                    wait_seconds=wait_time,
-                )
-
-                await asyncio.sleep(wait_time)
-
-            else:
-
-                logger.error(
-                    "transcription_failed",
-                    error=str(e),
-                    attempts=attempt + 1,
-                )
-
-                return {
-                    "transcript": "",
-                    "score": 0,
-                    "accuracy_score": 0,
-                    "clarity_score": 0,
-                    "depth_score": 0,
-                    "confidence_score": 0,
-                    "communication_score": 0,
-                    "reasoning": (
-                        f"Transcription failed: {str(e)}"
-                    ),
-                }

@@ -11,18 +11,14 @@ Authentication routes:
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
+from urllib.parse import urlencode
 from backend.core.security import create_access_token, get_current_user
+from backend.core.config import settings
 from backend.db.session import supabase
 from backend.core.logging import get_logger
 
 logger = get_logger("auth")
 router = APIRouter()
-
-# ---------------------------------------------------------------------------
-# TODO: Move this to backend/core/config.py as a proper setting
-#   FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-# ---------------------------------------------------------------------------
-FRONTEND_URL = "http://localhost:3000"
 
 
 # ---------------------------------------------------------------------------
@@ -93,15 +89,22 @@ async def signup(req: SignupRequest):
 
         auth_user = auth_response.user
 
-        result = supabase.table("users").upsert({
-            "id": auth_user.id,
-            "email": auth_user.email or req.email,
-            "hashed_password": "",
-            "full_name": req.full_name,
-        }).execute()
+        try:
+            result = supabase.table("users").upsert({
+                "id": auth_user.id,
+                "email": auth_user.email or req.email,
+                "hashed_password": "",
+                "full_name": req.full_name,
+            }).execute()
 
-        if not result.data:
-            logger.error("signup_profile_upsert_failed", email=req.email)
+            if not result.data:
+                logger.error("signup_profile_upsert_failed", email=req.email)
+        except Exception as profile_error:
+            logger.error(
+                "signup_profile_upsert_exception",
+                email=req.email,
+                error=str(profile_error),
+            )
 
         token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
 
@@ -134,14 +137,21 @@ async def login(req: LoginRequest):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         auth_user = auth_response.user
-        profile = supabase.table("users").select("*").eq("id", auth_user.id).execute()
-        if not profile.data:
-            supabase.table("users").upsert({
-                "id": auth_user.id,
-                "email": auth_user.email or req.email,
-                "hashed_password": "",
-                "full_name": (auth_user.user_metadata or {}).get("full_name", ""),
-            }).execute()
+        try:
+            profile = supabase.table("users").select("*").eq("id", auth_user.id).execute()
+            if not profile.data:
+                supabase.table("users").upsert({
+                    "id": auth_user.id,
+                    "email": auth_user.email or req.email,
+                    "hashed_password": "",
+                    "full_name": (auth_user.user_metadata or {}).get("full_name", ""),
+                }).execute()
+        except Exception as profile_error:
+            logger.error(
+                "login_profile_sync_failed",
+                user_id=auth_user.id,
+                error=str(profile_error),
+            )
 
         token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
 
@@ -219,7 +229,7 @@ async def google_oauth(request: Request):
 
     Then send the resulting ``access_token`` to ``POST /supabase-session``.
     """
-    callback_url = str(request.base_url).rstrip("/") + "/auth/callback"
+    callback_url = str(request.url_for("oauth_callback"))
 
     try:
         response = supabase.auth.sign_in_with_oauth({
@@ -262,12 +272,12 @@ async def oauth_callback(
     if error:
         logger.warning("oauth_error", error=error, description=error_description)
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/login?error=oauth_failed"
+            url=f"{settings.frontend_url}/login?error=oauth_failed"
         )
 
     if not code:
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/login?error=missing_code"
+            url=f"{settings.frontend_url}/login?error=missing_code"
         )
 
     try:
@@ -285,7 +295,7 @@ async def oauth_callback(
 
         if not auth_user:
             return RedirectResponse(
-                url=f"{FRONTEND_URL}/login?error=auth_failed"
+                url=f"{settings.frontend_url}/login?error=auth_failed"
             )
 
         _upsert_user(auth_user)
@@ -295,13 +305,18 @@ async def oauth_callback(
 
         logger.info("google_oauth_success", email=email)
 
+        params = urlencode({
+            "access_token": token,
+            "user_id": auth_user.id,
+            "email": email,
+        })
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/auth/callback?access_token={token}&user_id={auth_user.id}&email={email}"
+            url=f"{settings.frontend_url}/auth/callback?{params}"
         )
     except Exception as e:
         logger.error("google_oauth_callback_error", error=str(e))
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/login?error=oauth_failed"
+            url=f"{settings.frontend_url}/login?error=oauth_failed"
         )
 
 

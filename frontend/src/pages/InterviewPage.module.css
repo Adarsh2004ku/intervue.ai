@@ -442,6 +442,67 @@
   align-self: flex-end;
 }
 
+.costSection {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+.costSection h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: #dcfce7;
+}
+
+.costTotal {
+  color: #86efac;
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.costMeta {
+  display: flex;
+  gap: 0.75rem;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.costMeta span {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+}
+
+.costBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.costBreakdown p {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.costBreakdown div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #bbf7d0;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.costBreakdown strong {
+  color: #86efac;
+}
+
 /* ========== WAVEFORM SECTION ========== */
 
 .waveformSection {
@@ -490,6 +551,51 @@
   background: rgba(16, 185, 129, 0.1);
   border-radius: 8px;
   border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.transcriptText {
+  margin-top: 1rem;
+  color: #dbeafe;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.behaviorSection {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+.behaviorSection h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: #e0e7ff;
+}
+
+.behaviorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.behaviorGrid span {
+  color: #bfdbfe;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 8px;
+  padding: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.behaviorSection p {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 /* ========== NOTES SECTION ========== */

@@ -1,381 +1,511 @@
-import base64
 import json
-import asyncio
-from statistics import mean
+import time
+import uuid
+from collections import defaultdict
+from datetime import datetime, timezone
 
-from google import genai
+from fastapi import (
+    APIRouter,
+    Depends,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+)
+from pydantic import BaseModel
 
 from backend.core.config import settings
-from backend.core.logging import get_logger
+from backend.core.logging import (
+    get_logger,
+)
+from backend.core.security import get_current_user
+from backend.db.session import supabase
+from backend.services.cost_tracking import (
+    estimate_elevenlabs_stt_cost_inr,
+    estimate_elevenlabs_tts_cost_inr,
+    estimate_gemini_cost_inr,
+    get_interview_cost_summary,
+    record_ai_cost,
+)
 
+from backend.services.audio.gemini_stt import (
+    transcribe_and_evaluate,
+)
+from backend.services.audio.elevenlabs_tts import (
+    synthesize_interviewer_speech,
+)
 
-logger = get_logger("behavior")
-
-
-# =========================================================
-# Gemini Client
-# =========================================================
-client = genai.Client(
-    api_key=settings.google_api_key
+from backend.services.vision.behavior import (
+    analyze_frame,
+    aggregate_behavior_analysis,
 )
 
 
-# =========================================================
-# Default Response
-# =========================================================
-DEFAULT_RESPONSE = {
-    "engagement_score": 50,
-    "confidence_score": 50,
-    "nervousness_score": 50,
-    "professionalism_score": 50,
-    "eye_contact": True,
-    "looking_away": False,
-    "distracted": False,
-    "expression": "neutral",
-    "emotion": "neutral",
-    "posture": "upright",
-    "confidence_level": "medium",
-    "notes": "Could not analyze behavior",
-}
+logger = get_logger(
+    "interview_routes"
+)
 
 
-# =========================================================
-# Internal Sync Gemini Call
-# =========================================================
-def _generate_content(contents):
+router = APIRouter(
+    prefix="/interview",
+    tags=["Interview"]
+)
 
-    return client.models.generate_content(
-        model="gemini-2.5-flash",
 
-        contents=contents,
+class StartInterviewRequest(BaseModel):
+    resume_id: str | None = None
+    job_role: str = "General"
+    interview_mode: str = "faang"
 
-        config={
-            "temperature": 0.2,
-            "top_p": 0.8,
-            "top_k": 40,
-        }
+
+class CompleteInterviewRequest(BaseModel):
+    overall_score: int | None = None
+    behavior_summary: dict | None = None
+
+
+interview_sessions = defaultdict(
+    lambda: {
+        "frames": [],
+        "audio": [],
+    }
+)
+
+
+def _record_vision_cost(
+    interview_id: str,
+    result: dict,
+    latency_ms: int,
+) -> dict | None:
+    usage = result.pop("_usage", None)
+    if not usage:
+        return None
+
+    tokens_in = int(usage.get("tokens_in") or 0)
+    tokens_out = int(usage.get("tokens_out") or 0)
+    model = usage.get("model") or "gemini-2.5-flash"
+    cost_inr = estimate_gemini_cost_inr(
+        model=model,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        input_modality="text_image_video",
+    )
+
+    return record_ai_cost(
+        interview_id=interview_id,
+        model=model,
+        call_type="vision_frame",
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_inr=cost_inr,
+        latency_ms=latency_ms,
     )
 
 
-# =========================================================
-# Analyze Single Frame
-# =========================================================
-async def analyze_frame(
-    frame_bytes: bytes,
-    mime_type: str = "image/jpeg"
-) -> dict:
-    """
-    Analyze webcam frame for interview behavior.
-    """
+@router.post("/start")
+async def start_interview(
+    req: StartInterviewRequest,
+    user: dict = Depends(get_current_user),
+):
+
+    interview_id = str(
+        uuid.uuid4()
+    )
+
+    if req.interview_mode not in {"faang", "startup", "hr"}:
+        raise HTTPException(status_code=400, detail="Invalid interview mode")
+
+    if req.resume_id:
+        resume = (
+            supabase.table("resumes")
+            .select("id")
+            .eq("id", req.resume_id)
+            .eq("user_id", user["sub"])
+            .execute()
+        )
+        if not resume.data:
+            raise HTTPException(status_code=404, detail="Resume not found")
 
     try:
+        created = (
+            supabase.table("interviews")
+            .insert({
+                "id": interview_id,
+                "user_id": user["sub"],
+                "resume_id": req.resume_id,
+                "job_role": req.job_role.strip() or "General",
+                "interview_mode": req.interview_mode,
+                "status": "in_progress",
+            })
+            .execute()
+        )
+    except Exception as e:
+        logger.exception(
+            "interview_create_failed",
+            user_id=user.get("sub"),
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Unable to create interview")
 
-        # Encode image
-        frame_b64 = base64.b64encode(
-            frame_bytes
-        ).decode("utf-8")
+    interview_sessions[
+        interview_id
+    ] = {
+        "frames": [],
+        "audio": [],
+    }
 
-        response = await asyncio.to_thread(
-            _generate_content,
+    return {
+        "success": True,
+        "interview_id": interview_id,
+        "created_at": (
+            created.data[0].get("created_at")
+            if created.data
+            else datetime.now(timezone.utc).isoformat()
+        ),
+    }
 
-            [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": frame_b64,
-                    }
-                },
 
-                """
-Analyze this image of a candidate during a professional job interview.
+@router.get("/health")
+async def health_check():
 
-Evaluate:
+    return {
+        "status": "ok",
+        "service": "interview",
+    }
 
-- engagement
-- confidence
-- nervousness
-- professionalism
-- eye contact
-- posture
-- facial expression
-- distraction level
 
-Return ONLY valid JSON.
+@router.post("/analyze-frame")
+async def analyze_webcam_frame(
 
-Example:
+    interview_id: str = Form(...),
 
-{
-    "engagement_score": 82,
-    "confidence_score": 76,
-    "nervousness_score": 25,
-    "professionalism_score": 88,
-    "eye_contact": true,
-    "looking_away": false,
-    "distracted": false,
-    "expression": "focused",
-    "emotion": "confident",
-    "posture": "upright",
-    "confidence_level": "high",
-    "notes": "Candidate appears attentive and confident"
-}
+    file: UploadFile = File(...),
+):
 
-Rules:
-- scores must be between 0 and 100
-- no markdown
-- no explanation
-- return only JSON
-"""
-            ]
+    try:
+        started_at = time.perf_counter()
+
+        frame_bytes = await file.read()
+
+        result = await analyze_frame(
+            frame_bytes=frame_bytes,
+            mime_type=file.content_type or "image/jpeg",
+        )
+        latency_ms = round((time.perf_counter() - started_at) * 1000)
+        cost_record = _record_vision_cost(
+            interview_id=interview_id,
+            result=result,
+            latency_ms=latency_ms,
         )
 
-        raw = response.text.strip()
+        interview_sessions[
+            interview_id
+        ]["frames"].append(result)
 
-        # Remove markdown wrappers
-        if raw.startswith("```"):
-
-            raw = (
-                raw.replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-
-        result = json.loads(raw)
-
-        validated = {
-            "engagement_score": int(
-                result.get(
-                    "engagement_score",
-                    50
-                )
-            ),
-
-            "confidence_score": int(
-                result.get(
-                    "confidence_score",
-                    50
-                )
-            ),
-
-            "nervousness_score": int(
-                result.get(
-                    "nervousness_score",
-                    50
-                )
-            ),
-
-            "professionalism_score": int(
-                result.get(
-                    "professionalism_score",
-                    50
-                )
-            ),
-
-            "eye_contact": bool(
-                result.get(
-                    "eye_contact",
-                    True
-                )
-            ),
-
-            "looking_away": bool(
-                result.get(
-                    "looking_away",
-                    False
-                )
-            ),
-
-            "distracted": bool(
-                result.get(
-                    "distracted",
-                    False
-                )
-            ),
-
-            "expression": str(
-                result.get(
-                    "expression",
-                    "neutral"
-                )
-            ),
-
-            "emotion": str(
-                result.get(
-                    "emotion",
-                    "neutral"
-                )
-            ),
-
-            "posture": str(
-                result.get(
-                    "posture",
-                    "upright"
-                )
-            ),
-
-            "confidence_level": str(
-                result.get(
-                    "confidence_level",
-                    "medium"
-                )
-            ),
-
-            "notes": str(
-                result.get(
-                    "notes",
-                    ""
-                )
-            ),
+        return {
+            "success": True,
+            "analysis": result,
+            "cost": cost_record,
+            "session_cost": get_interview_cost_summary(interview_id),
         }
-
-        logger.info(
-            "frame_analyzed",
-            engagement=validated[
-                "engagement_score"
-            ],
-            confidence=validated[
-                "confidence_score"
-            ],
-            emotion=validated[
-                "emotion"
-            ],
-        )
-
-        return validated
-
-    except json.JSONDecodeError:
-
-        logger.warning(
-            "behavior_parse_failed"
-        )
-
-        return DEFAULT_RESPONSE
 
     except Exception as e:
 
         logger.exception(
-            "behavior_analysis_failed",
-            error=str(e)
+            "frame_analysis_failed",
+            error=str(e),
         )
 
         return {
-            **DEFAULT_RESPONSE,
-            "notes": str(e),
+            "success": False,
+            "error": str(e),
         }
 
 
-# =========================================================
-# Aggregate Interview Behavior
-# =========================================================
-def aggregate_behavior_analysis(
-    frames: list[dict]
-) -> dict:
-    """
-    Aggregate multiple frame analyses
-    into final interview behavior analytics.
-    """
+@router.post("/analyze-audio")
+async def analyze_audio_answer(
 
-    if not frames:
+    interview_id: str = Form(...),
+
+    question: str = Form(...),
+
+    duration_sec: float | None = Form(None),
+
+    file: UploadFile = File(...),
+):
+
+    try:
+        started_at = time.perf_counter()
+
+        audio_bytes = await file.read()
+
+        result = await transcribe_and_evaluate(
+            audio_bytes=audio_bytes,
+            question=question,
+            mime_type=file.content_type or "audio/webm",
+        )
+        latency_ms = round((time.perf_counter() - started_at) * 1000)
+        is_billable = bool(result.pop("_billable", False))
+        cost_record = None
+
+        if is_billable:
+            cost_record = record_ai_cost(
+                interview_id=interview_id,
+                model=result.get("model") or settings.elevenlabs_stt_model,
+                call_type="speech_to_text",
+                cost_inr=estimate_elevenlabs_stt_cost_inr(duration_sec),
+                latency_ms=latency_ms,
+            )
+
+        interview_sessions[
+            interview_id
+        ]["audio"].append(result)
 
         return {
-            "overall_engagement": 0,
-            "overall_confidence": 0,
-            "overall_professionalism": 0,
-            "overall_nervousness": 0,
-            "eye_contact_ratio": 0,
-            "distraction_ratio": 0,
-            "dominant_emotion": "neutral",
-            "behavior_summary": (
-                "No behavior data available"
-            ),
+            "success": True,
+            "evaluation": result,
+            "cost": cost_record,
+            "session_cost": get_interview_cost_summary(interview_id),
         }
 
-    eye_contact_ratio = (
-        sum(
-            1 for f in frames
-            if f.get("eye_contact")
-        ) / len(frames)
+    except Exception as e:
+
+        logger.exception(
+            "audio_analysis_failed",
+            error=str(e),
+        )
+
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@router.get("/behavior-summary/{interview_id}")
+async def get_behavior_summary(
+    interview_id: str
+):
+
+    try:
+
+        frames = interview_sessions[
+            interview_id
+        ]["frames"]
+
+        summary = (
+            aggregate_behavior_analysis(
+                frames
+            )
+        )
+
+        return {
+            "success": True,
+            "summary": summary,
+        }
+
+    except Exception as e:
+
+        logger.exception(
+            "behavior_summary_failed",
+            error=str(e),
+        )
+
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@router.websocket("/ws/interview/{interview_id}")
+async def realtime_interview_socket(
+
+    websocket: WebSocket,
+
+    interview_id: str,
+):
+
+    await websocket.accept()
+
+    logger.info(
+        "websocket_connected",
+        interview_id=interview_id,
     )
 
-    distraction_ratio = (
-        sum(
-            1 for f in frames
-            if f.get("distracted")
-        ) / len(frames)
+    try:
+
+        while True:
+
+            data = await websocket.receive()
+
+            if data.get("bytes") is not None:
+
+                frame_bytes = data["bytes"]
+
+                result = await analyze_frame(
+                    frame_bytes=frame_bytes,
+                    mime_type="image/jpeg",
+                )
+                cost_record = _record_vision_cost(
+                    interview_id=interview_id,
+                    result=result,
+                    latency_ms=0,
+                )
+
+                interview_sessions[
+                    interview_id
+                ]["frames"].append(result)
+
+                await websocket.send_json({
+
+                    "type": "vision",
+
+                    "data": result,
+
+                    "cost": cost_record,
+
+                    "session_cost": get_interview_cost_summary(interview_id),
+                })
+
+            elif data.get("text") is not None:
+
+                try:
+                    payload = json.loads(
+                        data["text"]
+                    )
+                except json.JSONDecodeError:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Invalid WebSocket JSON payload",
+                    })
+                    continue
+
+                message_type = payload.get(
+                    "type"
+                )
+
+                if message_type == "ping":
+
+                    await websocket.send_json({
+                        "type": "pong"
+                    })
+
+                elif message_type == "speak":
+
+                    speech_text = str(payload.get("text") or "")
+                    started_at = time.perf_counter()
+
+                    speech = await synthesize_interviewer_speech(
+                        text=speech_text,
+                        voice_id=payload.get("voice_id"),
+                    )
+                    latency_ms = round((time.perf_counter() - started_at) * 1000)
+                    speech["request_id"] = payload.get("request_id")
+                    speech["text"] = speech_text
+
+                    if speech.get("success"):
+                        speech["cost"] = record_ai_cost(
+                            interview_id=interview_id,
+                            model=speech.get("model") or settings.elevenlabs_tts_model,
+                            call_type="text_to_speech",
+                            cost_inr=estimate_elevenlabs_tts_cost_inr(
+                                model=speech.get("model") or settings.elevenlabs_tts_model,
+                                text=speech_text,
+                            ),
+                            latency_ms=latency_ms,
+                        )
+                        speech["session_cost"] = get_interview_cost_summary(interview_id)
+
+                    await websocket.send_json({
+
+                        "type": "audio",
+
+                        "data": speech,
+                    })
+
+                elif message_type == "summary":
+
+                    summary = (
+                        aggregate_behavior_analysis(
+                            interview_sessions[
+                                interview_id
+                            ]["frames"]
+                        )
+                    )
+
+                    await websocket.send_json({
+
+                        "type": "summary",
+
+                        "data": summary,
+
+                        "session_cost": get_interview_cost_summary(interview_id),
+                    })
+
+                else:
+
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Unsupported WebSocket message type: {message_type}",
+                    })
+
+    except WebSocketDisconnect:
+
+        logger.info(
+            "websocket_disconnected",
+            interview_id=interview_id,
+        )
+
+    except Exception as e:
+
+        logger.exception(
+            "websocket_failed",
+            error=str(e),
+        )
+
+
+@router.post("/{interview_id}/complete")
+async def complete_interview(
+    interview_id: str,
+    req: CompleteInterviewRequest,
+    user: dict = Depends(get_current_user),
+):
+    interview = (
+        supabase.table("interviews")
+        .select("id")
+        .eq("id", interview_id)
+        .eq("user_id", user["sub"])
+        .execute()
     )
 
-    emotions = [
-        f.get("emotion", "neutral")
-        for f in frames
-    ]
+    if not interview.data:
+        raise HTTPException(status_code=404, detail="Interview not found")
 
-    dominant_emotion = max(
-        set(emotions),
-        key=emotions.count
-    )
+    summary = get_interview_cost_summary(interview_id)
+    update_data = {
+        "status": "completed",
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "total_tokens": summary["total_tokens"],
+    }
+
+    if req.overall_score is not None:
+        update_data["overall_score"] = max(0, min(100, req.overall_score))
+
+    if req.behavior_summary is not None:
+        update_data["behavior_notes"] = [req.behavior_summary]
+
+    try:
+        supabase.table("interviews").update(update_data).eq("id", interview_id).execute()
+    except Exception as e:
+        logger.exception(
+            "interview_complete_failed",
+            interview_id=interview_id,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Unable to complete interview")
 
     return {
-
-        "overall_engagement": round(
-            mean(
-                f.get(
-                    "engagement_score",
-                    50
-                )
-                for f in frames
-            ),
-            2,
-        ),
-
-        "overall_confidence": round(
-            mean(
-                f.get(
-                    "confidence_score",
-                    50
-                )
-                for f in frames
-            ),
-            2,
-        ),
-
-        "overall_professionalism": round(
-            mean(
-                f.get(
-                    "professionalism_score",
-                    50
-                )
-                for f in frames
-            ),
-            2,
-        ),
-
-        "overall_nervousness": round(
-            mean(
-                f.get(
-                    "nervousness_score",
-                    50
-                )
-                for f in frames
-            ),
-            2,
-        ),
-
-        "eye_contact_ratio": round(
-            eye_contact_ratio * 100,
-            2,
-        ),
-
-        "distraction_ratio": round(
-            distraction_ratio * 100,
-            2,
-        ),
-
-        "dominant_emotion": dominant_emotion,
-
-        "behavior_summary": (
-            f"Candidate showed "
-            f"{dominant_emotion} behavior "
-            f"with "
-            f"{round(eye_contact_ratio * 100)}% "
-            f"eye contact consistency."
-        ),
+        "success": True,
+        "interview_id": interview_id,
+        "session_cost": summary,
     }
