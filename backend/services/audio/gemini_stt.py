@@ -12,48 +12,15 @@ logger = get_logger("elevenlabs_stt")
 ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
 STOP_WORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "me",
-    "my",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "this",
-    "to",
-    "was",
-    "what",
-    "when",
-    "where",
-    "with",
-    "you",
-    "your",
+    "a","an","and","are","as","at",
+    "be","by","for","from","how","i","in","is","it","me","my",
+    "of","on","or","that","the","this","to","was","what","when",
+    "where","with","you","your",
 }
 
 FILLER_WORDS = {
-    "um",
-    "uh",
-    "erm",
-    "hmm",
-    "like",
-    "basically",
-    "actually",
-    "literally",
+    "um","uh","erm","hmm","like",
+    "basically","actually","literally",
 }
 
 
@@ -191,6 +158,7 @@ async def _transcribe_with_elevenlabs(
         )
         response.raise_for_status()
         return response.json()
+
 
 
 async def transcribe_and_evaluate(

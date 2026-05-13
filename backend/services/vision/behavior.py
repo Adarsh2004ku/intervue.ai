@@ -10,8 +10,8 @@ from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.services.cost_tracking import extract_gemini_usage
 
-
 logger = get_logger("behavior")
+
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 
 
@@ -21,8 +21,6 @@ GEMINI_VISION_MODEL = "gemini-2.5-flash"
 client = genai.Client(
     api_key=settings.google_api_key
 )
-
-
 # =========================================================
 # Default Response
 # =========================================================
@@ -49,9 +47,7 @@ def _generate_content(contents):
 
     return client.models.generate_content(
         model=GEMINI_VISION_MODEL,
-
         contents=contents,
-
         config={
             "temperature": 0.2,
             "top_p": 0.8,
@@ -281,17 +277,13 @@ Rules:
         }
 
         logger.info(
-
             "frame_analyzed",
-
             engagement=validated[
                 "engagement_score"
             ],
-
             confidence=validated[
                 "confidence_score"
             ],
-
             emotion=validated[
                 "emotion"
             ],
@@ -305,9 +297,7 @@ Rules:
     except json.JSONDecodeError as e:
 
         logger.warning(
-
             "behavior_parse_failed",
-
             error=str(e),
         )
 
@@ -338,9 +328,7 @@ Rules:
     except Exception as e:
 
         logger.exception(
-
             "behavior_analysis_failed",
-
             error=str(e)
         )
 
@@ -366,53 +354,39 @@ def aggregate_behavior_analysis(
     if not frames:
 
         return {
-
             "overall_engagement": 0,
-
             "overall_confidence": 0,
-
             "overall_professionalism": 0,
-
             "overall_nervousness": 0,
-
             "eye_contact_ratio": 0,
-
             "distraction_ratio": 0,
-
             "dominant_emotion": "neutral",
-
             "behavior_summary": (
                 "No behavior data available"
             ),
         }
 
     eye_contact_ratio = (
-
         sum(
             1 for f in frames
             if f.get("eye_contact")
         )
-
         / len(frames)
     )
 
     distraction_ratio = (
-
         sum(
             1 for f in frames
             if f.get("distracted")
         )
-
         / len(frames)
     )
 
     emotions = [
-
         f.get(
             "emotion",
             "neutral"
         )
-
         for f in frames
     ]
 
@@ -422,60 +396,47 @@ def aggregate_behavior_analysis(
     )
 
     return {
-
         "overall_engagement": round(
-
             mean(
                 f.get(
                     "engagement_score",
                     50
                 )
-
                 for f in frames
             ),
-
             2,
         ),
 
         "overall_confidence": round(
-
             mean(
                 f.get(
                     "confidence_score",
                     50
                 )
-
                 for f in frames
             ),
-
             2,
         ),
 
         "overall_professionalism": round(
-
             mean(
                 f.get(
                     "professionalism_score",
                     50
                 )
-
                 for f in frames
             ),
-
             2,
         ),
 
         "overall_nervousness": round(
-
             mean(
                 f.get(
                     "nervousness_score",
                     50
                 )
-
                 for f in frames
             ),
-
             2,
         ),
 
@@ -492,15 +453,10 @@ def aggregate_behavior_analysis(
         "dominant_emotion": dominant_emotion,
 
         "behavior_summary": (
-
             f"Candidate showed "
-
             f"{dominant_emotion} behavior "
-
             f"with "
-
             f"{round(eye_contact_ratio * 100)}% "
-
             f"eye contact consistency."
         ),
     }
