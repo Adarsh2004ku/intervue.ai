@@ -5,6 +5,8 @@ All routes are prefixed with /api/v1
 
 from fastapi import APIRouter
 
+from backend.core.config import settings
+from backend.db.session import check_db_connection
 from backend.api.v1.routes.auth import (
     router as auth_router,
 )
@@ -58,3 +60,15 @@ api_router.include_router(
     prefix="/admin",
     tags=["Admin"]
 )
+
+
+@api_router.get("/health")
+async def api_v1_health():
+    """Same payload as ``GET /health`` on the app root, exposed under ``/api/v1`` for path-based routing (e.g. Vercel Services)."""
+    db_status = check_db_connection()
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "environment": settings.environment,
+        "database": db_status,
+    }

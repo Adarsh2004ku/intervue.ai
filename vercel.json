@@ -1,9 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci --prefix frontend || npm ci",
-  "buildCommand": "(npm run build --prefix frontend && rm -rf dist && mkdir -p dist && cp -r frontend/dist/. dist/) || npm run build",
-  "outputDirectory": "dist",
-  "framework": null,
+  "experimentalServices": {
+    "frontend": {
+      "entrypoint": "frontend",
+      "routePrefix": "/",
+      "framework": "vite"
+    },
+    "backend": {
+      "entrypoint": "backend/main.py",
+      "routePrefix": "/api/v1",
+      "framework": "fastapi"
+    }
+  },
   "rewrites": [
     { "source": "/login", "destination": "/index.html" },
     { "source": "/login/:path*", "destination": "/index.html" },

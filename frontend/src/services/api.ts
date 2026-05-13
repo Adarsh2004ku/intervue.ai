@@ -412,7 +412,12 @@ export function normalizeDashboard(
 
 const healthUrl = () => {
   const apiUrl = new URL(API_BASE_URL, window.location.origin);
-  apiUrl.pathname = '/health';
+  const path = apiUrl.pathname.replace(/\/$/, '');
+  if (path.endsWith('/api/v1')) {
+    apiUrl.pathname = `${path}/health`;
+  } else {
+    apiUrl.pathname = '/health';
+  }
   apiUrl.search = '';
   return apiUrl.toString();
 };
