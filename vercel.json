@@ -1,25 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "if [ ! -d frontend ]; then echo 'Set Vercel Root Directory to the repository root (empty), not a subfolder.' >&2; exit 1; fi; if [ -f frontend/package-lock.json ]; then npm ci --prefix frontend; else npm install --prefix frontend --no-audit --no-fund; fi",
-  "experimentalServices": {
-    "frontend": {
-      "entrypoint": "frontend",
-      "routePrefix": "/",
-      "framework": "vite"
-    },
-    "backend": {
-      "entrypoint": "backend/main.py",
-      "routePrefix": "/api/v1",
-      "framework": "fastapi"
+  "framework": "fastapi",
+  "installCommand": "python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt",
+  "build": {
+    "env": {
+      "PYTHONPATH": "."
     }
-  },
-  "rewrites": [
-    { "source": "/login", "destination": "/index.html" },
-    { "source": "/login/:path*", "destination": "/index.html" },
-    { "source": "/auth/callback", "destination": "/index.html" },
-    { "source": "/home", "destination": "/index.html" },
-    { "source": "/home/:path*", "destination": "/index.html" },
-    { "source": "/interview", "destination": "/index.html" },
-    { "source": "/interview/:path*", "destination": "/index.html" }
-  ]
+  }
 }
