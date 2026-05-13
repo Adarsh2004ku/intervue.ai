@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "if [ ! -d frontend ]; then echo 'Set Vercel Root Directory to the repository root (empty), not a subfolder.' >&2; exit 1; fi; if [ -f frontend/package-lock.json ]; then npm ci --prefix frontend; else npm install --prefix frontend --no-audit --no-fund; fi",
   "experimentalServices": {
     "frontend": {
       "entrypoint": "frontend",
