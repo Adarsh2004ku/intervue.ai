@@ -50,6 +50,18 @@ app.middleware("http")(log_requests)
 app.include_router(api_router, prefix="/api/v1")
 
 
+@app.get("/")
+async def root():
+    """API landing endpoint for browser visits to the backend root."""
+    return {
+        "service": "Intervue.AI API",
+        "status": "ok",
+        "health": "/health",
+        "api_health": "/api/v1/health",
+        "docs": "/docs",
+    }
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""

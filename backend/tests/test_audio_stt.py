@@ -12,3 +12,6 @@ def test_elevenlabs_stt_evaluator_reports_correct_provider():
     assert result["model"]
     assert result["transcript"].startswith("I designed")
     assert result["score"] > 0
+    assert result["word_count"] == 11
+    assert result["stopword_count"] >= 2
+    assert result["words_per_minute"] == 0

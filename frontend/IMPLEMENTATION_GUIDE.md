@@ -40,12 +40,11 @@ For a deployed backend, set:
 ```bash
 VITE_API_BASE_URL=https://your-api.example.com/api/v1
 VITE_WS_BASE_URL=wss://your-api.example.com/api/v1
-VITE_SUPABASE_URL=https://your-project.supabase.co
 ```
 
 The main API client is `src/services/api.ts`.
 
-Email signup/login uses Supabase Auth through the Python backend. Google login redirects through Supabase OAuth, so enable Google in Supabase Auth providers and add `http://localhost:3000/login` as an allowed redirect URL in Supabase.
+Email signup/login and Google OAuth both go through the Python backend. Keep Supabase URL/service keys in `backend/.env`, enable Google in Supabase Auth providers, and add your backend callback URL, for example `http://localhost:8000/api/v1/auth/callback`, as an allowed redirect URL in Supabase.
 
 ## 6. Deployment
 

@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
 
 class TestHealthEndpoint:
@@ -32,6 +33,24 @@ class TestAuthEndpoints:
         """Login with missing fields should return 422."""
         response = client.post("/api/v1/auth/login", json={})
         assert response.status_code == 422
+
+    def test_google_oauth_callback_exchanges_auth_code(self, client, mock_supabase):
+        """OAuth callback should exchange Supabase auth_code and redirect with app token."""
+        auth_user = SimpleNamespace(
+            id="oauth-user-id",
+            email="oauth@test.com",
+            user_metadata={"full_name": "OAuth User"},
+        )
+        mock_supabase.auth.exchange_code_for_session.return_value = SimpleNamespace(user=auth_user)
+
+        response = client.get(
+            "/api/v1/auth/callback?code=test-code",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 307
+        mock_supabase.auth.exchange_code_for_session.assert_called_once_with({"auth_code": "test-code"})
+        assert response.headers["location"].startswith("http://localhost:3000/auth/callback?access_token=")
 
 
 class TestResumeEndpoints:

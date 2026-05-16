@@ -70,6 +70,7 @@ def _evaluate_transcript(transcript: str, question: str, stt_response: dict) -> 
     answer_words = re.findall(r"[a-zA-Z][a-zA-Z0-9']*", transcript.lower())
     word_count = len(answer_words)
     filler_count = sum(1 for word in answer_words if word in FILLER_WORDS)
+    stopword_count = sum(1 for word in answer_words if word in STOP_WORDS)
 
     question_keywords = _keywords(question)
     answer_keywords = _keywords(transcript)
@@ -122,6 +123,11 @@ def _evaluate_transcript(transcript: str, question: str, stt_response: dict) -> 
         "confidence_score": confidence_score,
         "communication_score": communication_score,
         "reasoning": reasoning,
+        "word_count": word_count,
+        "stopword_count": stopword_count,
+        "filler_count": filler_count,
+        "keyword_overlap_percent": round(keyword_overlap * 100),
+        "words_per_minute": 0,
         "provider": "elevenlabs",
         "model": settings.elevenlabs_stt_model,
     }

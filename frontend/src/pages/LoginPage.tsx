@@ -2,8 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Loader } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import { ApiError, api, tokenStore } from '../services/api';
 import styles from './LoginPage.module.css';
+
+const oauthErrorMessages: Record<string, string> = {
+  oauth_failed: 'Google sign-in could not be completed. Please try again.',
+  missing_code: 'Google did not return a login code. Please try again.',
+  auth_failed: 'Google sign-in succeeded, but the app could not create your session.',
+  access_denied: 'Google sign-in was cancelled.',
+};
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,10 +28,11 @@ const LoginPage: React.FC = () => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const backendAccessToken = query.get('access_token');
     const supabaseAccessToken = hash.get('access_token');
-    const errorDescription = query.get('error') || hash.get('error_description');
+    const rawError = query.get('error') || hash.get('error_description');
 
-    if (errorDescription) {
-      setError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
+    if (rawError) {
+      const decodedError = decodeURIComponent(rawError.replace(/\+/g, ' '));
+      setError(oauthErrorMessages[decodedError] || decodedError);
       window.history.replaceState(null, '', '/login');
       return;
     }
@@ -93,22 +102,16 @@ const LoginPage: React.FC = () => {
   };
 
   const handleGoogleLogin = async () => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-
-    if (!supabaseUrl) {
-      setError('VITE_SUPABASE_URL is missing in frontend/.env');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
-    const redirectTo = `${window.location.origin}/login`;
-    const url = new URL(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/authorize`);
-    url.searchParams.set('provider', 'google');
-    url.searchParams.set('redirect_to', redirectTo);
-
-    window.location.href = url.toString();
+    try {
+      const result = await api.auth.google();
+      window.location.href = result.url;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Google login is not available right now.');
+      setLoading(false);
+    }
   };
 
   // ── Animation variants ────────────────────────────────────────────
@@ -132,6 +135,7 @@ const LoginPage: React.FC = () => {
   // ── Render ────────────────────────────────────────────────────────
   return (
     <div className={styles.loginPage}>
+      <ImmersiveStage variant="ambient" />
       {/* Left Side - Branding */}
       <motion.div
         className={styles.leftPanel}
@@ -298,7 +302,7 @@ const LoginPage: React.FC = () => {
             animate="visible"
           >
             <motion.button type="button" className={styles.socialBtn} variants={itemVariants} onClick={handleGoogleLogin}>
-              <span>🔷</span> Continue with Google
+              <span>G</span> Continue with Google
             </motion.button>
             <motion.button
               type="button"
@@ -306,7 +310,7 @@ const LoginPage: React.FC = () => {
               variants={itemVariants}
               onClick={() => setError('Apple login is not configured yet.')}
             >
-              <span>🍎</span> Continue with Apple
+              <span>A</span> Continue with Apple
             </motion.button>
           </motion.div>
 

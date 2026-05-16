@@ -22,6 +22,7 @@ def mock_supabase():
     """Mock Supabase client for testing."""
     with patch("backend.db.session.supabase") as mock_sb, \
          patch("backend.api.v1.routes.auth.supabase", mock_sb), \
+         patch("backend.api.v1.routes.auth.get_supabase_client") as mock_auth_client, \
          patch("backend.api.v1.routes.resume.supabase", mock_sb), \
          patch("backend.api.v1.routes.admin.supabase", mock_sb), \
          patch("backend.services.interview.repository.supabase", mock_sb), \
@@ -42,6 +43,7 @@ def mock_supabase():
         mock_sb.table.return_value.insert.return_value.execute.return_value = mock_insert_execute
         mock_sb.table.return_value.upsert.return_value.execute.return_value = mock_insert_execute
         mock_sb.table.return_value.delete.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_auth_client.return_value = mock_sb
         yield mock_sb
 
 

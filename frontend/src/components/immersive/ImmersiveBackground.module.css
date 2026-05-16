@@ -1,0 +1,83 @@
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0.78;
+}
+
+.grid {
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  bottom: -28%;
+  height: 58%;
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 58, 237, 0.12) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent 76%);
+  opacity: 0.62;
+  transform: perspective(980px) rotateX(64deg);
+  transform-origin: bottom center;
+}
+
+.lightSweep {
+  position: absolute;
+  inset: -20%;
+  background:
+    linear-gradient(105deg, transparent 18%, rgba(124, 58, 237, 0.1) 36%, transparent 54%),
+    linear-gradient(235deg, transparent 30%, rgba(139, 92, 246, 0.08) 48%, transparent 66%);
+  mix-blend-mode: multiply;
+  opacity: 0.72;
+  animation: sweep 14s ease-in-out infinite alternate;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(248, 249, 252, 0.08), rgba(248, 249, 252, 0.62)),
+    radial-gradient(circle at 50% 44%, transparent 0, rgba(243, 240, 255, 0.24) 56%, rgba(248, 249, 252, 0.72) 100%);
+}
+
+.ambient .canvas {
+  opacity: 0.42;
+}
+
+.ambient .grid {
+  height: 44%;
+  opacity: 0.36;
+}
+
+.ambient .lightSweep {
+  opacity: 0.36;
+}
+
+@keyframes sweep {
+  from {
+    transform: translate3d(-4%, -2%, 0) rotate(0deg);
+  }
+
+  to {
+    transform: translate3d(4%, 3%, 0) rotate(5deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .canvas {
+    opacity: 0.48;
+  }
+
+  .grid {
+    height: 42%;
+    background-size: 32px 32px;
+    opacity: 0.38;
+  }
+}

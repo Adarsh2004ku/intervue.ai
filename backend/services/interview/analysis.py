@@ -82,6 +82,17 @@ async def analyze_audio_submission(
         question=question,
         mime_type=mime_type,
     )
+    word_count = result.get("word_count")
+    if isinstance(word_count, int) and duration_sec and duration_sec > 0:
+        result["words_per_minute"] = round(word_count / (duration_sec / 60))
+    else:
+        result["words_per_minute"] = 0
+    result["speech_metrics"] = {
+        "word_count": result.get("word_count", 0),
+        "stopword_count": result.get("stopword_count", 0),
+        "filler_count": result.get("filler_count", 0),
+        "words_per_minute": result.get("words_per_minute", 0),
+    }
     latency_ms = round((time.perf_counter() - started_at) * 1000)
     is_billable = bool(result.pop("_billable", False))
     cost_record = None

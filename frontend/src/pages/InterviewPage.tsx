@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, Video, Share2, Settings, Clock, Volume2 } from 'lucide-react';
+import { Circle, Clock, Mic, PhoneOff, Settings, Video, Volume2 } from 'lucide-react';
+import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import {
   ApiError,
   AudioEvaluation,
@@ -90,6 +92,7 @@ const InterviewPage: React.FC = () => {
   const [behaviorSummary, setBehaviorSummary] = useState<BehaviorSummary | null>(null);
   const [sessionCost, setSessionCost] = useState<CostSummary | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [showInterviewSettings, setShowInterviewSettings] = useState(false);
 
   useEffect(() => {
     if (!tokenStore.get()) {
@@ -338,29 +341,73 @@ const InterviewPage: React.FC = () => {
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
-  const feedbackScores = useMemo(() => {
-    if (latestEvaluation) {
-      return [
-        { label: 'Clarity', score: latestEvaluation.clarity_score || 0 },
-        { label: 'Confidence', score: latestEvaluation.confidence_score || 0 },
-        { label: 'Depth', score: latestEvaluation.depth_score || 0 },
-        { label: 'Accuracy', score: latestEvaluation.accuracy_score || 0 },
-      ];
-    }
-
+  const analyticsMetrics = useMemo(() => {
+    const normalize = (value?: number | null, fallback = 0) => (
+      Math.min(100, Math.max(0, Math.round(value ?? fallback)))
+    );
     const baseScore = latestScore ?? 0;
+
     return [
-      { label: 'Clarity', score: Math.min(100, Math.max(0, baseScore || 0)) },
-      { label: 'Confidence', score: latestBehavior?.confidence_score ?? (connected ? 85 : 20) },
-      { label: 'Depth', score: baseScore ? Math.max(0, baseScore - 6) : 0 },
-      { label: 'Engagement', score: latestBehavior?.engagement_score ?? (connected ? 80 : 0) },
+      {
+        label: 'Clarity',
+        score: normalize(latestEvaluation?.clarity_score, baseScore),
+        hint: 'Answer structure',
+      },
+      {
+        label: 'Confidence',
+        score: normalize(
+          latestEvaluation?.confidence_score
+            ?? latestBehavior?.confidence_score
+            ?? behaviorSummary?.overall_confidence,
+          connected ? 82 : 0,
+        ),
+        hint: 'Delivery signal',
+      },
+      {
+        label: 'Engagement',
+        score: normalize(
+          latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement,
+          connected ? 78 : 0,
+        ),
+        hint: 'Camera presence',
+      },
+      {
+        label: 'Technical Depth',
+        score: normalize(latestEvaluation?.depth_score, baseScore ? baseScore - 6 : 0),
+        hint: 'Reasoning depth',
+      },
     ];
-  }, [connected, latestBehavior, latestEvaluation, latestScore]);
+  }, [behaviorSummary, connected, latestBehavior, latestEvaluation, latestScore]);
+
+  const aiAnalysisUnavailable = useMemo(() => (
+    /failed|error|unable|unavailable|quota|429|exhausted/i.test(sessionStatus)
+  ), [sessionStatus]);
+
+  const liveInsights = useMemo(() => [
+    connected ? 'Realtime interview channel is connected.' : 'Waiting for realtime interview channel.',
+    latestEvaluation ? `Latest answer score: ${latestEvaluation.score}/100.` : 'Submit an answer to unlock score analysis.',
+    latestBehavior
+      ? `Eye contact is ${latestBehavior.eye_contact ? 'detected' : 'not steady yet'} with ${latestBehavior.emotion || 'neutral'} affect.`
+      : 'Camera behavior analysis starts once frames are processed.',
+  ], [connected, latestBehavior, latestEvaluation]);
 
   const costRows = useMemo(() => (
     Object.entries(sessionCost?.by_call_type || {})
       .map(([name, amount]) => ({ name, amount }))
   ), [sessionCost]);
+
+  const speechMetrics = useMemo(() => {
+    const metrics = latestEvaluation?.speech_metrics;
+    const stopwordCount = metrics?.stopword_count ?? latestEvaluation?.stopword_count ?? 0;
+    const wordCount = metrics?.word_count ?? latestEvaluation?.word_count ?? 0;
+    const wordsPerMinute = metrics?.words_per_minute ?? latestEvaluation?.words_per_minute ?? 0;
+
+    return {
+      stopwordCount,
+      wordCount,
+      wordsPerMinute,
+    };
+  }, [latestEvaluation]);
 
   const speakWithBrowser = (text: string) => {
     if (!('speechSynthesis' in window)) {
@@ -603,9 +650,27 @@ const InterviewPage: React.FC = () => {
 
     recorder.start();
     recordingStartedAtRef.current = Date.now();
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
     setIsMuted(false);
     setIsRecording(true);
     setSessionStatus('Recording answer...');
+  };
+
+  const handleMicToggle = () => {
+    const stream = mediaStreamRef.current;
+    if (!stream) {
+      setSessionStatus(mediaError || 'Microphone is not ready');
+      return;
+    }
+
+    const nextMuted = !isMuted;
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted;
+    });
+    setIsMuted(nextMuted);
+    setSessionStatus(nextMuted ? 'Microphone muted' : 'Microphone active');
   };
 
   const handleVideoToggle = () => {
@@ -614,11 +679,6 @@ const InterviewPage: React.FC = () => {
       track.enabled = next;
     });
     setIsVideoOn(next);
-  };
-
-  const handleShare = async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    setSessionStatus('Interview link copied');
   };
 
   const handleEndInterview = async () => {
@@ -680,6 +740,7 @@ const InterviewPage: React.FC = () => {
 
   return (
     <div className={styles.interviewPage}>
+      <ImmersiveStage variant="ambient" className={styles.sunriseAmbient} />
       <motion.header
         className={styles.interviewHeader}
         initial={{ y: -50 }}
@@ -698,9 +759,6 @@ const InterviewPage: React.FC = () => {
           </span>
         </div>
 
-        <motion.button className={styles.endBtn} whileHover={{ scale: 1.05 }} onClick={handleEndInterview}>
-          End Interview
-        </motion.button>
       </motion.header>
 
       <div className={styles.interviewContent}>
@@ -710,58 +768,313 @@ const InterviewPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <motion.div className={styles.videoGrid}>
-            <motion.div
-              className={styles.videoBox}
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className={styles.videoPlaceholder}>
-                <div className={styles.videoContent}>
-                  <div className={styles.avatar}>👨‍💼</div>
-                  <p>{activeInterview?.persona_name || 'Interviewer'}</p>
+          <motion.section
+            className={`${styles.cameraStage} ${isRecording ? styles.cameraStageSpeaking : ''}`}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55 }}
+          >
+            <div className={styles.cameraFrame}>
+              {isVideoOn ? (
+                <video ref={localVideoRef} className={styles.localVideo} autoPlay playsInline muted />
+              ) : (
+                <div className={styles.cameraOffState}>
+                  <div className={styles.avatar}>You</div>
+                  <span>Camera paused</span>
                 </div>
-                <div className={styles.talking}>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
-              <motion.div
-                className={styles.statusBadge}
-                animate={{ opacity: [1, 0.5, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                {connected ? 'Connected' : 'Offline'}
-              </motion.div>
-            </motion.div>
+              )}
 
-            <motion.div
-              className={styles.videoBox}
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className={styles.videoPlaceholder}>
-                <div className={styles.videoContent}>
-                  {isVideoOn ? (
-                    <video ref={localVideoRef} className={styles.localVideo} autoPlay playsInline muted />
-                  ) : (
-                    <div className={styles.avatar}>👤</div>
-                  )}
-                  <p>You</p>
+              <div className={styles.cameraGradient} />
+              <div className={styles.cameraTopBar}>
+                <div className={styles.participantPill}>
+                  <span className={styles.liveDot} />
+                  <strong>You</strong>
+                  <small>{isRecording ? 'Answering now' : isVideoOn ? 'Camera live' : 'Video off'}</small>
+                </div>
+                <div className={`${styles.recordingBadge} ${isRecording ? styles.isLive : ''}`}>
+                  {isRecording ? 'Recording' : connected ? 'Live session' : 'Connecting'}
                 </div>
               </div>
+
               <motion.div
-                className={styles.statusBadge}
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
+                className={styles.cameraPip}
+                initial={{ opacity: 0, scale: 0.92, y: -12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.1 }}
               >
-                {isRecording ? 'Recording' : isMuted ? 'Muted' : 'Ready'}
+                <div className={styles.pipAvatar}>AI</div>
+                <div>
+                  <strong>{activeInterview?.persona_name || 'AI interviewer'}</strong>
+                  <span>{connected ? 'Listening' : 'Offline'}</span>
+                </div>
+                <div className={styles.pipWave}>
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </motion.div>
-            </motion.div>
-          </motion.div>
+
+              <div className={styles.cameraAiPulse} />
+
+            </div>
+          </motion.section>
           {mediaError && <div className={styles.mediaNotice}>{mediaError}</div>}
 
+          <motion.div
+            className={styles.cameraControls}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.15 }}
+          >
+            <motion.button
+              type="button"
+              className={`${styles.cameraControl} ${isMuted ? styles.cameraControlOff : styles.cameraControlActive}`}
+              onClick={handleMicToggle}
+              title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+              aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.94 }}
+            >
+              <Mic size={18} />
+              <span>{isMuted ? 'Mic Off' : 'Mic On'}</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              className={`${styles.cameraControl} ${isRecording ? styles.cameraControlActive : ''}`}
+              onClick={handleRecordToggle}
+              title={isRecording ? 'Stop recording and submit answer' : 'Record answer'}
+              aria-label={isRecording ? 'Stop recording and submit answer' : 'Record answer'}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.94 }}
+            >
+              <Circle size={18} />
+              <span>{isRecording ? 'Stop & Submit' : 'Record & Submit'}</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              className={`${styles.cameraControl} ${isVideoOn ? styles.cameraControlActive : styles.cameraControlOff}`}
+              onClick={handleVideoToggle}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              title="Toggle camera"
+              aria-label="Toggle camera"
+            >
+              <Video size={18} />
+              <span>{isVideoOn ? 'Camera On' : 'Camera Off'}</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              className={styles.cameraControl}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleSoundCheck}
+              title="Speak question"
+              aria-label="Speak question"
+            >
+              <Volume2 size={18} />
+              <span>Speak Question</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              className={`${styles.cameraControl} ${showInterviewSettings ? styles.cameraControlActive : ''}`}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowInterviewSettings((current) => !current)}
+              title="Interview settings"
+              aria-label="Interview settings"
+            >
+              <Settings size={18} />
+              <span>Settings</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              className={`${styles.cameraControl} ${styles.cameraControlDanger}`}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleEndInterview}
+              title="End interview"
+              aria-label="End interview"
+            >
+              <PhoneOff size={18} />
+              <span>End Interview</span>
+            </motion.button>
+          </motion.div>
+
+          {showInterviewSettings && (
+            <motion.div
+              className={styles.interviewSettingsPanel}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div>
+                <strong>Interview settings</strong>
+                <span>{connected ? 'Realtime channel connected' : 'Realtime channel connecting'}</span>
+              </div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={voiceEnabled}
+                  onChange={(event) => setVoiceEnabled(event.target.checked)}
+                />
+                Auto-read next questions
+              </label>
+            </motion.div>
+          )}
+
+          <motion.section
+            className={`${styles.insightPanel} ${styles.analyticsDashboard}`}
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <motion.div className={styles.analyticsHeader} variants={itemVariants}>
+              <div>
+                <span>Realtime AI Analytics</span>
+                <h3>Interview performance</h3>
+              </div>
+              <div className={styles.analyticsLivePill}>
+                <span />
+                {connected ? 'Live' : 'Syncing'}
+              </div>
+            </motion.div>
+
+            {aiAnalysisUnavailable && (
+              <motion.div className={styles.aiWarningCard} variants={itemVariants}>
+                <strong>AI analysis temporarily unavailable</strong>
+                <span>We will keep the interview running and refresh insights when the next analysis succeeds.</span>
+              </motion.div>
+            )}
+
+            <motion.div className={styles.analyticsTopGrid} variants={containerVariants}>
+              <motion.div className={styles.analyticsGrid} variants={containerVariants}>
+                {analyticsMetrics.map((item, index) => (
+                  <motion.div
+                    key={item.label}
+                    className={styles.metricWidget}
+                    variants={itemVariants}
+                    whileHover={{ y: -4, scale: 1.01 }}
+                  >
+                    <div className={styles.metricWidgetTop}>
+                      <span className={styles.metricPulse} />
+                      <small>{item.hint}</small>
+                    </div>
+                    <strong>{item.label}</strong>
+                    <div className={styles.metricValueRow}>
+                      <span>{item.score}</span>
+                      <small>/100</small>
+                    </div>
+                    <div className={styles.metricProgress}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${item.score}%` }}
+                        transition={{ duration: 0.75, delay: index * 0.05 }}
+                      />
+                    </div>
+                  </motion.div>
+                ))}
+                {[
+                  { label: 'Stopwords', value: speechMetrics.stopwordCount, hint: 'Speech discipline', suffix: '' },
+                  { label: 'Words/min', value: speechMetrics.wordsPerMinute, hint: 'Speaking pace', suffix: 'wpm' },
+                  { label: 'Word count', value: speechMetrics.wordCount, hint: 'Answer length', suffix: 'words' },
+                ].map((item, index) => (
+                  <motion.div
+                    key={item.label}
+                    className={`${styles.metricWidget} ${styles.speechMetricWidget}`}
+                    variants={itemVariants}
+                    whileHover={{ y: -4, scale: 1.01 }}
+                  >
+                    <div className={styles.metricWidgetTop}>
+                      <span className={styles.metricPulse} />
+                      <small>{item.hint}</small>
+                    </div>
+                    <strong>{item.label}</strong>
+                    <div className={styles.metricValueRow}>
+                      <span>{item.value}</span>
+                      {item.suffix && <small>{item.suffix}</small>}
+                    </div>
+                    <div className={styles.metricProgress}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, Math.max(0, item.value))}%` }}
+                        transition={{ duration: 0.75, delay: (analyticsMetrics.length + index) * 0.05 }}
+                      />
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+
+              <motion.div className={styles.radarCard} variants={itemVariants}>
+                <div className={styles.analyticsCardHeader}>
+                  <h3>Skill radar</h3>
+                  <span>Realtime shape</span>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <RadarChart data={analyticsMetrics}>
+                    <PolarGrid stroke="#E9EAF3" />
+                    <PolarAngleAxis dataKey="label" tick={{ fill: '#70707B', fontSize: 10 }} />
+                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+                    <Radar
+                      name="Score"
+                      dataKey="score"
+                      stroke="#7C3AED"
+                      fill="#8B5CF6"
+                      fillOpacity={0.28}
+                      strokeWidth={2}
+                      isAnimationActive
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </motion.div>
+            </motion.div>
+
+            <motion.div className={styles.analyticsDeepGrid} variants={containerVariants}>
+              <motion.div className={styles.aiSummaryCard} variants={itemVariants}>
+                <div className={styles.analyticsCardHeader}>
+                  <h3>AI summary</h3>
+                  <span>{latestEvaluation?.provider || 'Intervue AI'}</span>
+                </div>
+                <p>
+                  {aiAnalysisUnavailable
+                    ? 'AI analysis temporarily unavailable'
+                    : latestReasoning || behaviorSummary?.behavior_summary || latestBehavior?.notes || 'AI summary appears after the first answer is evaluated.'}
+                </p>
+                <div className={styles.liveInsights}>
+                  {liveInsights.map((insight) => (
+                    <span key={insight}>{insight}</span>
+                  ))}
+                </div>
+              </motion.div>
+
+              <motion.div className={styles.behaviorSnapshotCard} variants={itemVariants}>
+                <div className={styles.analyticsCardHeader}>
+                  <h3>Behavior signals</h3>
+                  <span>{latestBehavior ? 'Active' : 'Pending'}</span>
+                </div>
+                <div className={styles.behaviorGrid}>
+                  <span>Engagement: {latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement ?? 0}</span>
+                  <span>Eye contact: {behaviorSummary?.eye_contact_ratio ?? (latestBehavior?.eye_contact ? 100 : 0)}%</span>
+                  <span>Emotion: {behaviorSummary?.dominant_emotion || latestBehavior?.emotion || 'neutral'}</span>
+                </div>
+                <p>{aiAnalysisUnavailable ? 'AI analysis temporarily unavailable' : behaviorSummary?.behavior_summary || latestBehavior?.notes || 'Camera behavior insights will appear after frame analysis.'}</p>
+              </motion.div>
+            </motion.div>
+
+          </motion.section>
+
+        </motion.div>
+
+        <motion.div
+          className={styles.rightPanel}
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6 }}
+        >
           <motion.div
             className={styles.questionPanel}
             initial={{ opacity: 0, y: 20 }}
@@ -795,107 +1108,16 @@ const InterviewPage: React.FC = () => {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.5 }}
             >
-              <p className={styles.checkItem}>Backend session id: {interviewId || 'none'}</p>
-              <p className={styles.checkItem}>{connected ? 'WebSocket connected' : 'Waiting for WebSocket'}</p>
-              <p className={styles.checkItem}>{latestReasoning || 'Answer scoring appears here after audio is sent.'}</p>
-            </motion.div>
-          </motion.div>
-
-          <motion.div
-            className={styles.controls}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-          >
-            <motion.button
-              className={`${styles.controlBtn} ${isRecording ? styles.active : ''}`}
-              onClick={handleRecordToggle}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              title={isRecording ? 'Stop and send answer' : 'Record answer'}
-            >
-              <Mic size={20} />
-            </motion.button>
-
-            <motion.button
-              className={`${styles.controlBtn} ${isVideoOn ? '' : styles.active}`}
-              onClick={handleVideoToggle}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              title="Toggle camera"
-            >
-              <Video size={20} />
-            </motion.button>
-
-            <motion.button
-              className={styles.controlBtn}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleShare}
-              title="Copy interview link"
-            >
-              <Share2 size={20} />
-            </motion.button>
-
-            <motion.button
-              className={styles.controlBtn}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/home')}
-              title="Back to dashboard"
-            >
-              <Settings size={20} />
-            </motion.button>
-            <button type="button" className={styles.answerAction} onClick={handleRecordToggle}>
-              {isRecording ? 'Stop & Send' : 'Record Answer'}
-            </button>
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          className={styles.rightPanel}
-          initial={{ opacity: 0, x: 30 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <motion.div
-            className={styles.feedbackSection}
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <motion.h3 variants={itemVariants}>Live Feedback</motion.h3>
-
-            <motion.div className={styles.feedbackScores} variants={containerVariants}>
-              {feedbackScores.map((item, index) => (
-                <motion.div
-                  key={item.label}
-                  className={styles.feedbackItem}
-                  variants={itemVariants}
-                >
-                  <div className={styles.feedbackLabel}>
-                    <span>{item.label}</span>
-                  </div>
-                  <div className={styles.feedbackBar}>
-                    <motion.div
-                      className={styles.feedbackFill}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${item.score}%` }}
-                      transition={{ duration: 1, delay: index * 0.1 }}
-                      style={{
-                        background: `linear-gradient(90deg, #6366f1, ${
-                          item.score > 80
-                            ? '#10b981'
-                            : item.score > 60
-                            ? '#f59e0b'
-                            : '#ef4444'
-                        })`,
-                      }}
-                    />
-                  </div>
-                  <span className={styles.feedbackScore}>{item.score}</span>
-                </motion.div>
-              ))}
+              <div className={styles.guideHeader}>
+                <span>Interview dashboard guide</span>
+                <small>{connected ? 'Live' : 'Connecting'}</small>
+              </div>
+              <div className={styles.guideGrid}>
+                <p className={styles.checkItem}>Click Record & Submit to record your answer, then click it again to submit.</p>
+                <p className={styles.checkItem}>Use Situation, Action, Result for experience answers.</p>
+                <p className={styles.checkItem}>Clarify assumptions before technical or system design answers.</p>
+              </div>
+              <p className={styles.liveNote}>{latestReasoning || 'Answer scoring appears here after audio is sent.'}</p>
             </motion.div>
           </motion.div>
 
@@ -930,50 +1152,34 @@ const InterviewPage: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
           >
-            <h3>Your Answer</h3>
-            <div className={styles.waveform}>
-              {[...Array(40)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  className={styles.waveBar}
+            <h3>Speaking Activity</h3>
+            <div className={styles.analyticsWaveform} aria-hidden="true">
+              {Array.from({ length: 36 }).map((_, index) => (
+                <motion.span
+                  key={index}
                   animate={{
-                    height: connected && !isMuted ? `${20 + ((i * 17) % 80)}%` : '10%',
+                    height: isRecording || (connected && !isMuted) ? `${20 + ((index * 19) % 72)}%` : '18%',
                   }}
                   transition={{
-                    duration: 0.3,
+                    duration: 0.45,
                     repeat: Infinity,
                     repeatType: 'reverse',
+                    delay: index * 0.015,
                   }}
                 />
               ))}
             </div>
             <div className={styles.waveformInfo}>
-              <span>{connected ? 'Live channel ready' : 'Waiting for channel'}</span>
+              <span>{isRecording ? 'Capturing speech' : connected ? 'Ready for answer' : 'Waiting for channel'}</span>
               <motion.span
+                className={styles.liveStatusDot}
                 animate={{ opacity: [1, 0.5, 1] }}
                 transition={{ duration: 1, repeat: Infinity }}
-              >
-                🔴
-              </motion.span>
+              />
             </div>
             {latestTranscript && (
               <p className={styles.transcriptText}>{latestTranscript}</p>
             )}
-          </motion.div>
-
-          <motion.div
-            className={styles.behaviorSection}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.35 }}
-          >
-            <h3>Camera Behavior</h3>
-            <div className={styles.behaviorGrid}>
-              <span>Engagement: {latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement ?? 0}</span>
-              <span>Eye contact: {behaviorSummary?.eye_contact_ratio ?? (latestBehavior?.eye_contact ? 100 : 0)}%</span>
-              <span>Emotion: {behaviorSummary?.dominant_emotion || latestBehavior?.emotion || 'neutral'}</span>
-            </div>
-            <p>{behaviorSummary?.behavior_summary || latestBehavior?.notes || 'Camera snapshots are analyzed while the interview is open.'}</p>
           </motion.div>
 
           <motion.div
@@ -990,31 +1196,6 @@ const InterviewPage: React.FC = () => {
             />
           </motion.div>
 
-          <motion.div
-            className={styles.settingsSection}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-          >
-            <motion.button
-              className={styles.settingsBtn}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/home')}
-            >
-              <Settings size={16} />
-              Dashboard
-            </motion.button>
-            <motion.button
-              className={styles.notesBtn}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSoundCheck}
-            >
-              <Volume2 size={16} />
-              Speak Question
-            </motion.button>
-          </motion.div>
         </motion.div>
       </div>
     </div>

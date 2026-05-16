@@ -14,11 +14,12 @@ from pydantic import BaseModel, EmailStr
 from urllib.parse import urlencode
 from backend.core.security import create_access_token, get_current_user
 from backend.core.config import settings
-from backend.db.session import supabase
+from backend.db.session import get_supabase_client, supabase
 from backend.core.logging import get_logger
 
 logger = get_logger("auth")
 router = APIRouter()
+_oauth_supabase = None
 
 
 # ---------------------------------------------------------------------------
@@ -51,13 +52,27 @@ class TokenResponse(BaseModel):
 # Helper
 # ---------------------------------------------------------------------------
 
-def _upsert_user(auth_user, full_name: str = ""):
+def _get_oauth_supabase():
+    """Return the OAuth client that stores the PKCE verifier between redirects."""
+    global _oauth_supabase
+    if _oauth_supabase is None:
+        _oauth_supabase = get_supabase_client()
+    return _oauth_supabase
+
+
+def _profile_supabase():
+    """Return a fresh service-role client for backend-owned profile reads/writes."""
+    return get_supabase_client()
+
+
+def _upsert_user(auth_user, full_name: str = "", db_client=None):
     """Create or update the local users table row from a Supabase auth user."""
     email = auth_user.email or ""
     metadata = auth_user.user_metadata or {}
     name = full_name or metadata.get("full_name") or metadata.get("name") or ""
+    profile_client = db_client or _profile_supabase()
 
-    supabase.table("users").upsert({
+    profile_client.table("users").upsert({
         "id": auth_user.id,
         "email": email,
         "hashed_password": "",
@@ -75,7 +90,9 @@ def _upsert_user(auth_user, full_name: str = ""):
 async def signup(req: SignupRequest):
     """Register a new user through Supabase Auth and mirror the profile."""
     try:
-        auth_response = supabase.auth.admin.create_user({
+        auth_client = get_supabase_client()
+        profile_client = _profile_supabase()
+        auth_response = auth_client.auth.admin.create_user({
             "email": req.email,
             "password": req.password,
             "email_confirm": True,
@@ -90,7 +107,7 @@ async def signup(req: SignupRequest):
         auth_user = auth_response.user
 
         try:
-            result = supabase.table("users").upsert({
+            result = profile_client.table("users").upsert({
                 "id": auth_user.id,
                 "email": auth_user.email or req.email,
                 "hashed_password": "",
@@ -128,7 +145,9 @@ async def signup(req: SignupRequest):
 async def login(req: LoginRequest):
     """Login with Supabase Auth and receive an app JWT token."""
     try:
-        auth_response = supabase.auth.sign_in_with_password({
+        auth_client = get_supabase_client()
+        profile_client = _profile_supabase()
+        auth_response = auth_client.auth.sign_in_with_password({
             "email": req.email,
             "password": req.password,
         })
@@ -138,9 +157,9 @@ async def login(req: LoginRequest):
 
         auth_user = auth_response.user
         try:
-            profile = supabase.table("users").select("*").eq("id", auth_user.id).execute()
+            profile = profile_client.table("users").select("*").eq("id", auth_user.id).execute()
             if not profile.data:
-                supabase.table("users").upsert({
+                profile_client.table("users").upsert({
                     "id": auth_user.id,
                     "email": auth_user.email or req.email,
                     "hashed_password": "",
@@ -182,7 +201,8 @@ async def login_with_supabase_session(req: SupabaseSessionRequest):
       3. Frontend sends that token here → receives the app JWT
     """
     try:
-        user_response = supabase.auth.get_user(req.access_token)
+        auth_client = get_supabase_client()
+        user_response = auth_client.auth.get_user(req.access_token)
         auth_user = user_response.user if user_response else None
 
         if not auth_user:
@@ -232,7 +252,8 @@ async def google_oauth(request: Request):
     callback_url = str(request.url_for("oauth_callback"))
 
     try:
-        response = supabase.auth.sign_in_with_oauth({
+        oauth_client = _get_oauth_supabase()
+        response = oauth_client.auth.sign_in_with_oauth({
             "provider": "google",
             "options": {
                 "redirect_to": callback_url,
@@ -284,7 +305,8 @@ async def oauth_callback(
         # Exchange the authorization code for a Supabase session.
         # NOTE: If you run multiple workers, PKCE state may not be shared.
         # In that case prefer the frontend-driven flow (POST /supabase-session).
-        auth_response = supabase.auth.exchange_code_for_session({"code": code})
+        oauth_client = _get_oauth_supabase()
+        auth_response = oauth_client.auth.exchange_code_for_session({"auth_code": code})
 
         # Handle different supabase-py response shapes
         auth_user = getattr(auth_response, "user", None)
@@ -327,10 +349,11 @@ async def oauth_callback(
 @router.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):
     """Get current user profile."""
-    result = supabase.table("users").select("*").eq("id", user["sub"]).execute()
+    profile_client = _profile_supabase()
+    result = profile_client.table("users").select("*").eq("id", user["sub"]).execute()
     if not result.data:
         email = user.get("email", "")
-        created = supabase.table("users").upsert({
+        created = profile_client.table("users").upsert({
             "id": user["sub"],
             "email": email,
             "hashed_password": "",

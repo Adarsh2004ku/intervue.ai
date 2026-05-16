@@ -14,14 +14,18 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.17.10",
     "axios": "^1.6.2",
     "clsx": "^2.0.0",
     "framer-motion": "^10.18.0",
+    "gsap": "^3.12.5",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "recharts": "^2.10.3",
+    "three": "^0.160.1",
     "zustand": "^4.4.1"
   },
   "devDependencies": {

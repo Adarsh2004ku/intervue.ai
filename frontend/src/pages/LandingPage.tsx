@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, BarChart3, Zap, Brain, TrendingUp } from 'lucide-react';
+import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import { api } from '../services/api';
 import styles from './LandingPage.module.css';
 
@@ -79,6 +80,7 @@ const LandingPage: React.FC = () => {
 
   return (
     <div className={styles.landingPage}>
+      <ImmersiveStage variant="hero" />
       {/* Navigation */}
       <motion.nav 
         className={styles.navbar}
@@ -113,7 +115,7 @@ const LandingPage: React.FC = () => {
             animate="visible"
           >
             <motion.div className={styles.badge} variants={itemVariants}>
-              <span>🤖</span>{' '}
+              <span>AI</span>{' '}
               {apiOnline === false ? 'API Offline, UI Ready' : 'AI Powered, Human Perfected'}
             </motion.div>
 
@@ -133,7 +135,7 @@ const LandingPage: React.FC = () => {
                 <ArrowRight size={18} />
               </button>
               <button className={styles.secondaryBtn} onClick={goToLogin}>
-                📅 Book a Demo
+                See workflow
               </button>
             </motion.div>
 
@@ -141,7 +143,7 @@ const LandingPage: React.FC = () => {
               <div className={styles.avatars}>
                 {[1, 2, 3, 4].map((i) => (
                   <div key={i} className={styles.avatar}>
-                    👤
+                    C{i}
                   </div>
                 ))}
               </div>

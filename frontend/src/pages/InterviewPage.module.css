@@ -8,7 +8,7 @@
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   color: white;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 /* ========== HEADER ========== */
@@ -304,6 +304,45 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.guideHeader,
+.guideGrid {
+  display: flex;
+}
+
+.guideHeader {
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.guideHeader span {
+  color: #f8fafc;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.guideHeader small {
+  border: 1px solid rgba(52, 211, 153, 0.24);
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.1);
+  color: #bbf7d0;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.guideGrid {
+  flex-direction: column;
+  gap: 0.32rem;
+}
+
+.liveNote {
+  margin: 0;
+  color: #aeb9ca;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 /* ========== CONTROLS ========== */
@@ -707,5 +746,2652 @@
 
   .controls {
     flex-wrap: wrap;
+  }
+}
+
+/* ========== IMMERSIVE INTERVIEW REFRESH ========== */
+
+.interviewPage {
+  position: relative;
+  min-height: 100vh;
+  height: auto;
+  overflow-x: hidden;
+  background:
+    linear-gradient(135deg, rgba(103, 232, 249, 0.07), transparent 30%),
+    linear-gradient(315deg, rgba(52, 211, 153, 0.06), transparent 28%),
+    #070a12;
+  color: #f8fafc;
+  font-family: var(--font-sans);
+}
+
+.interviewHeader,
+.interviewContent {
+  position: relative;
+  z-index: 1;
+}
+
+.interviewHeader {
+  margin: 1rem 1rem 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 12, 22, 0.72);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px);
+}
+
+.headerLeft h2 {
+  color: #f8fafc;
+  font-weight: 820;
+}
+
+.headerLeft p {
+  color: #94a3b8;
+}
+
+.timer {
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 8px;
+  background: rgba(103, 232, 249, 0.1);
+  color: #cffafe;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.endBtn {
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  border-radius: 8px;
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+}
+
+.endBtn:hover {
+  background: rgba(251, 113, 133, 0.18);
+  transform: translateY(-1px);
+}
+
+.interviewContent {
+  grid-template-columns: minmax(0, 1.55fr) minmax(330px, 0.45fr);
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.leftPanel,
+.rightPanel,
+.videoBox,
+.questionPanel,
+.insightPanel,
+.feedbackSection,
+.costSection,
+.waveformSection,
+.behaviorSection,
+.notesSection {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(21, 28, 43, 0.82), rgba(10, 15, 27, 0.72));
+  box-shadow: 0 22px 65px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(22px);
+}
+
+.leftPanel,
+.rightPanel {
+  padding: 1rem;
+}
+
+.videoGrid {
+  height: min(48vh, 440px);
+  gap: 1rem;
+  perspective: 1200px;
+}
+
+.videoBox {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(103, 232, 249, 0.1), transparent 48%),
+    rgba(8, 12, 22, 0.82);
+  transform-style: preserve-3d;
+}
+
+.videoBox::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(103, 232, 249, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.08) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), transparent 76%);
+}
+
+.videoBox:hover {
+  border-color: rgba(103, 232, 249, 0.28);
+  transform: translateY(-3px) rotateX(1deg);
+}
+
+.videoPlaceholder {
+  background: transparent;
+}
+
+.videoContent {
+  position: relative;
+  z-index: 1;
+}
+
+.videoContent .avatar {
+  width: 5rem;
+  height: 5rem;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.52), transparent 22%),
+    linear-gradient(135deg, rgba(103, 232, 249, 0.7), rgba(52, 211, 153, 0.28));
+  box-shadow: 0 0 55px rgba(103, 232, 249, 0.26);
+  color: #031015;
+  font-size: 0;
+}
+
+.videoBox:first-child .avatar::after {
+  content: "AI";
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.videoBox:nth-child(2) .avatar::after {
+  content: "You";
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.videoContent p {
+  color: #dbeafe;
+}
+
+.localVideo {
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.talking span,
+.thinking span {
+  background: #67e8f9;
+  box-shadow: 0 0 18px rgba(103, 232, 249, 0.6);
+}
+
+.statusBadge {
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.1);
+  color: #bbf7d0;
+}
+
+.questionPanel {
+  margin-top: 1rem;
+  padding: 1.25rem;
+}
+
+.questionHeader {
+  gap: 0.8rem;
+}
+
+.questionNumber,
+.difficulty,
+.questionTags span {
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.09);
+  color: #cffafe;
+}
+
+.difficulty {
+  border-color: rgba(251, 191, 36, 0.26);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+}
+
+.questionPanel h3 {
+  color: #f8fafc;
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  line-height: 1.28;
+}
+
+.aiStatus {
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 8px;
+  background: rgba(103, 232, 249, 0.07);
+}
+
+.aiStatus p,
+.checkItem,
+.suggestedAnswer,
+.behaviorSection p {
+  color: #aeb9ca;
+}
+
+.controls {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.75rem;
+}
+
+.controlBtn {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #dbeafe;
+}
+
+.controlBtn:hover {
+  border-color: rgba(103, 232, 249, 0.3);
+  background: rgba(103, 232, 249, 0.09);
+  color: #f8fafc;
+}
+
+.controlBtn.active {
+  border-color: rgba(251, 113, 133, 0.32);
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+}
+
+.answerAction {
+  border: 1px solid rgba(103, 232, 249, 0.34);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #67e8f9, #34d399);
+  box-shadow: 0 18px 42px rgba(103, 232, 249, 0.2);
+  color: #031015;
+  font-weight: 850;
+}
+
+.answerAction:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 24px 58px rgba(103, 232, 249, 0.28);
+}
+
+.mediaNotice {
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+}
+
+.rightPanel {
+  gap: 1rem;
+}
+
+.feedbackSection h3,
+.costSection h3,
+.waveformSection h3,
+.behaviorSection h3,
+.notesSection h3 {
+  color: #f8fafc;
+}
+
+.feedbackLabel,
+.costBreakdown p,
+.costMeta span,
+.waveformInfo,
+.behaviorGrid span {
+  color: #aeb9ca;
+}
+
+.feedbackBar {
+  background: rgba(148, 163, 184, 0.13);
+}
+
+.feedbackFill {
+  background: linear-gradient(90deg, #67e8f9, #34d399);
+  box-shadow: 0 0 22px rgba(103, 232, 249, 0.25);
+}
+
+.feedbackScore,
+.costBreakdown strong {
+  color: #f8fafc;
+}
+
+.costTotal {
+  color: #67e8f9;
+  text-shadow: 0 0 22px rgba(103, 232, 249, 0.28);
+}
+
+.costBreakdown {
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
+.waveform {
+  border: 1px solid rgba(103, 232, 249, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 8, 16, 0.42);
+}
+
+.waveBar {
+  background: linear-gradient(180deg, #67e8f9, #34d399);
+  box-shadow: 0 0 18px rgba(103, 232, 249, 0.32);
+}
+
+.transcriptText {
+  border-left-color: rgba(103, 232, 249, 0.36);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbeafe;
+}
+
+.behaviorGrid {
+  gap: 0.5rem;
+}
+
+.behaviorGrid span {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.notesInput {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(4, 8, 16, 0.46);
+  color: #f8fafc;
+}
+
+.notesInput:focus {
+  border-color: rgba(103, 232, 249, 0.46);
+  box-shadow: 0 0 0 4px rgba(103, 232, 249, 0.1);
+}
+
+.settingsBtn,
+.notesBtn {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #dbeafe;
+}
+
+.settingsBtn:hover,
+.notesBtn:hover {
+  border-color: rgba(103, 232, 249, 0.3);
+  background: rgba(103, 232, 249, 0.08);
+  color: #f8fafc;
+}
+
+.insightPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.speechMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.speechMetric {
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 8px;
+  background: rgba(103, 232, 249, 0.065);
+  padding: 0.58rem 0.65rem;
+}
+
+.speechMetric span,
+.speechMetric strong {
+  display: block;
+}
+
+.speechMetric span {
+  color: #aeb9ca;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.speechMetric strong {
+  margin-top: 0.18rem;
+  color: #f8fafc;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.insightPanel .feedbackSection,
+.insightPanel .behaviorSection {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.insightPanel .feedbackSection {
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+@media (max-width: 1120px) {
+  .interviewContent {
+    grid-template-columns: 1fr;
+  }
+
+  .rightPanel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .interviewHeader {
+    margin: 0.75rem;
+  }
+
+  .interviewContent {
+    padding: 0.75rem;
+  }
+
+  .videoGrid,
+  .rightPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .videoGrid {
+    height: auto;
+  }
+
+  .videoBox {
+    min-height: 260px;
+  }
+
+  .questionPanel,
+  .leftPanel,
+  .rightPanel {
+    padding: 0.85rem;
+  }
+}
+
+/* ========== COMPACT INTERVIEW ROOM CONTROLS ========== */
+
+.interviewHeader {
+  padding: 0.72rem 1rem;
+}
+
+.headerLeft h2 {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.headerLeft p {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.timer {
+  padding: 0.48rem 0.78rem;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+}
+
+.endBtn {
+  padding: 0.52rem 0.85rem;
+  font-size: 0.84rem;
+}
+
+.interviewContent {
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.leftPanel,
+.rightPanel {
+  gap: 0.75rem;
+}
+
+.leftPanel,
+.rightPanel,
+.questionPanel,
+.feedbackSection,
+.costSection,
+.waveformSection,
+.behaviorSection,
+.notesSection {
+  padding: 0.85rem;
+}
+
+.videoGrid {
+  height: auto;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.videoBox {
+  aspect-ratio: 3 / 4;
+  min-height: 0;
+}
+
+.videoPlaceholder,
+.videoContent {
+  min-height: 0;
+}
+
+.videoContent {
+  overflow: hidden;
+}
+
+.videoContent .avatar {
+  width: 4rem;
+  height: 4rem;
+}
+
+.videoContent p {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.7rem;
+  z-index: 3;
+  margin: 0;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(3, 7, 18, 0.58);
+  backdrop-filter: blur(12px);
+  font-size: 0.78rem;
+}
+
+.localVideo {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.statusBadge {
+  top: 0.7rem;
+  right: 0.7rem;
+  padding: 0.34rem 0.65rem;
+  font-size: 0.7rem;
+}
+
+.controls {
+  position: sticky;
+  top: 0.65rem;
+  z-index: 15;
+  width: min(620px, 100%);
+  margin: 0 auto;
+  gap: 0.55rem;
+  padding: 0.55rem;
+  border-radius: 999px;
+  background: rgba(8, 12, 22, 0.86);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.3), 0 0 42px rgba(103, 232, 249, 0.08);
+  flex-wrap: nowrap;
+}
+
+.controlBtn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 999px;
+}
+
+.answerAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0 1rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.answerAction.recording {
+  border-color: rgba(251, 113, 133, 0.4);
+  background: linear-gradient(135deg, #fb7185, #f97316);
+  box-shadow: 0 18px 48px rgba(251, 113, 133, 0.22);
+  color: #fff7ed;
+}
+
+.questionPanel {
+  margin-top: 0;
+  min-height: auto;
+}
+
+.questionHeader {
+  margin-bottom: 0.75rem;
+}
+
+.questionNumber,
+.difficulty,
+.questionTags span {
+  padding: 0.28rem 0.58rem;
+  font-size: 0.7rem;
+}
+
+.questionPanel h3 {
+  margin-bottom: 0.75rem;
+  font-size: clamp(1rem, 1.25vw, 1.3rem);
+  line-height: 1.36;
+}
+
+.questionTags {
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.aiStatus {
+  gap: 0.55rem;
+  padding: 0.7rem;
+  margin-bottom: 0.75rem;
+}
+
+.aiStatus p,
+.suggestedAnswer,
+.checkItem {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.suggestedAnswer {
+  gap: 0.45rem;
+  padding: 0.58rem 0.65rem;
+}
+
+.checkItem {
+  margin: 0;
+  gap: 0.36rem;
+}
+
+.checkItem::before {
+  content: "";
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35);
+  flex: 0 0 auto;
+}
+
+.feedbackSection h3,
+.costSection h3,
+.waveformSection h3,
+.behaviorSection h3,
+.notesSection h3 {
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.feedbackScores,
+.feedbackItem,
+.costBreakdown {
+  gap: 0.55rem;
+}
+
+.feedbackLabel span,
+.feedbackScore,
+.costMeta,
+.costBreakdown p,
+.costBreakdown div,
+.waveformInfo,
+.transcriptText,
+.behaviorSection p,
+.notesInput {
+  font-size: 0.78rem;
+}
+
+.costTotal {
+  font-size: 1.35rem;
+}
+
+.waveform {
+  height: 58px;
+  margin-bottom: 0.65rem;
+  padding: 0.65rem;
+}
+
+.behaviorGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.behaviorGrid span {
+  padding: 0.48rem;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 760px) {
+  .interviewHeader {
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .timer,
+  .endBtn {
+    justify-content: center;
+  }
+
+  .videoGrid {
+    height: auto;
+  }
+
+  .controls {
+    position: sticky;
+    top: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    border-radius: 8px;
+  }
+
+  .answerAction {
+    flex: 1 1 140px;
+  }
+}
+
+/* ========== CINEMATIC LIVE CAMERA STAGE ========== */
+
+.interviewContent {
+  grid-template-columns: minmax(0, 1.9fr) minmax(320px, 0.9fr);
+}
+
+.cameraStage {
+  position: relative;
+  border-radius: 24px;
+  padding: 1px;
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.62), rgba(236, 72, 153, 0.42) 42%, rgba(255, 255, 255, 0.12)),
+    rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.42),
+    0 0 58px rgba(124, 58, 237, 0.14);
+  overflow: hidden;
+}
+
+.cameraStage::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(236, 72, 153, 0.2), transparent 32%),
+    radial-gradient(circle at 82% 15%, rgba(124, 58, 237, 0.24), transparent 28%);
+  opacity: 0.62;
+  animation: cameraAura 10s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.cameraStageSpeaking {
+  box-shadow:
+    0 32px 110px rgba(0, 0, 0, 0.46),
+    0 0 0 1px rgba(236, 72, 153, 0.18),
+    0 0 72px rgba(236, 72, 153, 0.24);
+}
+
+.cameraFrame {
+  position: relative;
+  z-index: 1;
+  aspect-ratio: 16 / 9;
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(12, 15, 28, 0.72), rgba(21, 12, 34, 0.7)),
+    #050712;
+}
+
+.cameraFrame .localVideo,
+.localVideo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0;
+  object-fit: cover;
+  object-position: center;
+}
+
+.cameraGradient {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(5, 7, 18, 0.5), transparent 22%, transparent 55%, rgba(5, 7, 18, 0.76)),
+    radial-gradient(circle at 76% 22%, rgba(124, 58, 237, 0.2), transparent 28%);
+  pointer-events: none;
+}
+
+.cameraTopBar,
+.subtitleOverlay,
+.cameraHud,
+.cameraPip,
+.cameraControls {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 12, 23, 0.54);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(20px);
+}
+
+.cameraTopBar {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem;
+  border-radius: 999px;
+}
+
+.participantPill,
+.recordingBadge,
+.voicePulse {
+  display: inline-flex;
+  align-items: center;
+}
+
+.participantPill {
+  min-width: 0;
+  gap: 0.55rem;
+}
+
+.participantPill strong {
+  color: #fff7fb;
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.participantPill small,
+.recordingBadge,
+.cameraHud small,
+.cameraPip span {
+  color: rgba(248, 250, 252, 0.68);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.liveDot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 6px rgba(52, 211, 153, 0.12), 0 0 22px rgba(52, 211, 153, 0.55);
+}
+
+.recordingBadge {
+  gap: 0.4rem;
+  flex-shrink: 0;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.recordingBadge::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #a78bfa;
+}
+
+.recordingBadge.isLive {
+  border-color: rgba(236, 72, 153, 0.36);
+  background: rgba(236, 72, 153, 0.16);
+  color: #ffe4f2;
+}
+
+.recordingBadge.isLive::before {
+  background: #fb7185;
+  box-shadow: 0 0 16px rgba(251, 113, 133, 0.7);
+}
+
+.cameraPip {
+  position: absolute;
+  top: 5.2rem;
+  right: 1rem;
+  z-index: 5;
+  width: min(250px, 30%);
+  min-width: 178px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border-radius: 20px;
+}
+
+.pipAvatar {
+  width: 2.65rem;
+  height: 2.65rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(236, 72, 153, 0.32);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.55), transparent 22%),
+    linear-gradient(135deg, #7c3aed, #ec4899);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 950;
+  box-shadow: 0 16px 34px rgba(124, 58, 237, 0.28);
+}
+
+.cameraPip strong,
+.cameraPip span {
+  display: block;
+}
+
+.cameraPip strong {
+  overflow: hidden;
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipWave,
+.miniWaveform {
+  display: flex;
+  align-items: center;
+}
+
+.pipWave {
+  gap: 0.18rem;
+}
+
+.pipWave span {
+  width: 0.2rem;
+  border-radius: 999px;
+  background: #f0abfc;
+  animation: cameraWave 0.72s ease-in-out infinite;
+}
+
+.pipWave span:nth-child(1) {
+  height: 0.6rem;
+}
+
+.pipWave span:nth-child(2) {
+  height: 1rem;
+  animation-delay: 0.1s;
+}
+
+.pipWave span:nth-child(3) {
+  height: 0.75rem;
+  animation-delay: 0.2s;
+}
+
+.cameraAiPulse {
+  position: absolute;
+  top: 5.7rem;
+  right: 1.45rem;
+  z-index: 3;
+  width: 4.4rem;
+  height: 4.4rem;
+  border-radius: 999px;
+  background: rgba(236, 72, 153, 0.16);
+  filter: blur(12px);
+  animation: aiPulse 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.subtitleOverlay {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 4;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.82rem 1rem;
+  border-radius: 20px;
+}
+
+.subtitleOverlay span {
+  color: #f0abfc;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.subtitleOverlay p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cameraHud {
+  position: absolute;
+  left: 1rem;
+  bottom: 6.7rem;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: min(430px, calc(100% - 2rem));
+  padding: 0.62rem 0.72rem;
+  border-radius: 999px;
+}
+
+.voicePulse {
+  gap: 0.52rem;
+  min-width: 0;
+}
+
+.voicePulse > span {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.voicePulse > span.voicePulseActive {
+  background: #ec4899;
+  box-shadow: 0 0 0 7px rgba(236, 72, 153, 0.12), 0 0 24px rgba(236, 72, 153, 0.62);
+}
+
+.voicePulse strong {
+  display: block;
+  color: white;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.miniWaveform {
+  gap: 0.18rem;
+  flex: 1;
+  min-width: 92px;
+}
+
+.miniWaveform span {
+  width: 0.22rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ec4899, #7c3aed);
+  opacity: 0.82;
+  animation: cameraWave 0.85s ease-in-out infinite;
+}
+
+.cameraOffState {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.85rem;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(124, 58, 237, 0.22), transparent 30%),
+    linear-gradient(135deg, #0f1020, #060816);
+}
+
+.cameraOffState .avatar {
+  width: 5rem;
+  height: 5rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(236, 72, 153, 0.28);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.8), rgba(236, 72, 153, 0.62));
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.cameraOffState span {
+  color: rgba(248, 250, 252, 0.72);
+  font-size: 0.9rem;
+  font-weight: 720;
+}
+
+.cameraControls {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: 100%;
+  margin: -1.55rem auto 0;
+  padding: 0.62rem;
+  gap: 0.52rem;
+  border-radius: 999px;
+}
+
+.cameraControl {
+  width: auto;
+  min-width: 3.15rem;
+  height: 3.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.48rem;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(248, 250, 252, 0.9);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.cameraControl span {
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.cameraControl:hover {
+  border-color: rgba(236, 72, 153, 0.42);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 24px rgba(124, 58, 237, 0.18);
+  color: white;
+}
+
+.cameraControlActive {
+  border-color: rgba(236, 72, 153, 0.42);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(236, 72, 153, 0.88));
+  color: white;
+  box-shadow: 0 12px 30px rgba(124, 58, 237, 0.25), 0 0 28px rgba(236, 72, 153, 0.22);
+}
+
+.cameraControlOff {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.72);
+  color: #94a3b8;
+}
+
+.cameraControlDanger {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.94), rgba(225, 29, 72, 0.9));
+  color: white;
+  box-shadow: 0 12px 34px rgba(225, 29, 72, 0.28);
+}
+
+@keyframes cameraAura {
+  from {
+    transform: translate3d(-2%, -1%, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(2%, 1%, 0) rotate(8deg);
+  }
+}
+
+@keyframes aiPulse {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.78;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes cameraWave {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1.35);
+  }
+}
+
+@media (max-width: 1120px) {
+  .interviewContent {
+    grid-template-columns: 1fr;
+  }
+
+  .cameraFrame {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 760px) {
+  .cameraStage,
+  .cameraFrame {
+    border-radius: 18px;
+  }
+
+  .cameraFrame {
+    min-height: 220px;
+  }
+
+  .cameraTopBar {
+    top: 0.7rem;
+    left: 0.7rem;
+    right: 0.7rem;
+    padding: 0.52rem;
+  }
+
+  .participantPill small {
+    display: none;
+  }
+
+  .cameraPip {
+    top: 4.35rem;
+    right: 0.7rem;
+    width: 40%;
+    min-width: 136px;
+    padding: 0.52rem;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pipWave {
+    display: none;
+  }
+
+  .pipAvatar {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 13px;
+  }
+
+  .cameraHud {
+    display: none;
+  }
+
+  .subtitleOverlay {
+    left: 0.7rem;
+    right: 0.7rem;
+    bottom: 0.7rem;
+    padding: 0.7rem;
+  }
+
+  .subtitleOverlay p {
+    font-size: 0.8rem;
+    -webkit-line-clamp: 2;
+  }
+
+  .cameraControls {
+    margin-top: 0.7rem;
+    width: 100%;
+    flex-wrap: wrap;
+    border-radius: 20px;
+  }
+
+  .cameraControl {
+    width: 2.8rem;
+    min-width: 2.8rem;
+    height: 2.8rem;
+    padding: 0;
+  }
+
+  .cameraControl span {
+    display: none;
+  }
+}
+
+/* ========== SUNRISE INTERVIEW DASHBOARD REDESIGN ========== */
+
+.interviewPage {
+  --sun-bg: #fff8ed;
+  --sun-card: rgba(255, 255, 255, 0.82);
+  --sun-card-strong: rgba(255, 255, 255, 0.94);
+  --sun-border: rgba(194, 65, 12, 0.14);
+  --sun-border-strong: rgba(249, 115, 22, 0.28);
+  --sun-text: #29140a;
+  --sun-muted: #7c5944;
+  --sun-soft: #fff4dc;
+  --sun-yellow: #facc15;
+  --sun-amber: #f59e0b;
+  --sun-orange: #f97316;
+  --sun-red: #ef4444;
+  --sun-shadow: 0 26px 80px rgba(154, 52, 18, 0.14);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 248, 237, 0.9) 42%, rgba(255, 237, 213, 0.78)),
+    linear-gradient(45deg, rgba(250, 204, 21, 0.22), transparent 36%),
+    #fffaf2;
+  color: var(--sun-text);
+}
+
+.sunriseAmbient {
+  opacity: 0.18;
+  filter: hue-rotate(142deg) saturate(1.75) brightness(1.2);
+  mix-blend-mode: multiply;
+}
+
+.interviewHeader,
+.leftPanel,
+.rightPanel,
+.questionPanel,
+.insightPanel,
+.costSection,
+.waveformSection,
+.behaviorSection,
+.notesSection,
+.settingsSection {
+  border: 1px solid var(--sun-border);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 247, 237, 0.76)),
+    var(--sun-card);
+  box-shadow: var(--sun-shadow);
+  backdrop-filter: blur(24px);
+}
+
+.interviewHeader {
+  margin: 1rem;
+  padding: 0.95rem 1.1rem;
+  border-color: rgba(249, 115, 22, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 237, 0.86)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.headerLeft h2 {
+  color: var(--sun-text);
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.headerLeft p {
+  color: var(--sun-muted);
+}
+
+.timer {
+  border: 1px solid rgba(250, 204, 21, 0.48);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(254, 249, 195, 0.92), rgba(255, 237, 213, 0.86));
+  color: #92400e;
+  box-shadow: 0 14px 34px rgba(245, 158, 11, 0.16);
+}
+
+.endBtn {
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  box-shadow: 0 16px 34px rgba(239, 68, 68, 0.22);
+  color: #fff7ed;
+}
+
+.endBtn:hover {
+  background: linear-gradient(135deg, #fb923c, #dc2626);
+  box-shadow: 0 20px 44px rgba(239, 68, 68, 0.28);
+}
+
+.interviewContent {
+  grid-template-columns: minmax(0, 1.75fr) minmax(320px, 0.88fr);
+  gap: 1rem;
+  padding: 0 1rem 1.2rem;
+}
+
+.leftPanel,
+.rightPanel {
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.cameraStage {
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(250, 204, 21, 0.9), rgba(249, 115, 22, 0.75) 45%, rgba(239, 68, 68, 0.64)),
+    rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 32px 100px rgba(154, 52, 18, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.64);
+}
+
+.cameraStage::before {
+  background:
+    linear-gradient(115deg, transparent 16%, rgba(250, 204, 21, 0.24) 38%, transparent 58%),
+    linear-gradient(235deg, transparent 24%, rgba(249, 115, 22, 0.22) 48%, transparent 68%);
+  opacity: 0.78;
+}
+
+.cameraStageSpeaking {
+  box-shadow:
+    0 36px 110px rgba(154, 52, 18, 0.24),
+    0 0 0 1px rgba(239, 68, 68, 0.18),
+    0 0 72px rgba(249, 115, 22, 0.28);
+}
+
+.cameraFrame {
+  border-radius: 27px;
+  background:
+    linear-gradient(145deg, rgba(67, 20, 7, 0.42), rgba(124, 45, 18, 0.2)),
+    #1c0f08;
+}
+
+.cameraGradient {
+  background:
+    linear-gradient(180deg, rgba(41, 20, 10, 0.38), transparent 22%, transparent 52%, rgba(41, 20, 10, 0.68)),
+    linear-gradient(125deg, rgba(250, 204, 21, 0.16), transparent 34%);
+}
+
+.cameraTopBar,
+.subtitleOverlay,
+.cameraHud,
+.cameraPip,
+.cameraControls {
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 20px 55px rgba(154, 52, 18, 0.16);
+  backdrop-filter: blur(24px) saturate(1.3);
+}
+
+.cameraTopBar {
+  color: var(--sun-text);
+}
+
+.participantPill strong,
+.voicePulse strong,
+.cameraPip strong {
+  color: var(--sun-text);
+}
+
+.participantPill small,
+.recordingBadge,
+.cameraHud small,
+.cameraPip span {
+  color: var(--sun-muted);
+}
+
+.liveDot {
+  background: var(--sun-orange);
+  box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.13), 0 0 24px rgba(249, 115, 22, 0.48);
+}
+
+.recordingBadge {
+  border-color: rgba(249, 115, 22, 0.24);
+  background: rgba(255, 247, 237, 0.74);
+  color: #9a3412;
+}
+
+.recordingBadge::before {
+  background: var(--sun-yellow);
+}
+
+.recordingBadge.isLive {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.92), rgba(255, 237, 213, 0.82));
+  color: #b91c1c;
+}
+
+.recordingBadge.isLive::before {
+  background: var(--sun-red);
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.58);
+}
+
+.cameraPip {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 247, 237, 0.68)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.pipAvatar,
+.cameraOffState .avatar {
+  border-color: rgba(249, 115, 22, 0.32);
+  background:
+    linear-gradient(135deg, #facc15, #f97316 52%, #ef4444);
+  color: #431407;
+  box-shadow: 0 18px 38px rgba(249, 115, 22, 0.24);
+}
+
+.pipWave span,
+.miniWaveform span {
+  background: linear-gradient(180deg, #ef4444, #f97316 48%, #facc15);
+}
+
+.cameraAiPulse {
+  background: rgba(249, 115, 22, 0.18);
+}
+
+.subtitleOverlay {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.74), rgba(255, 237, 213, 0.58)),
+    rgba(255, 255, 255, 0.62);
+}
+
+.subtitleOverlay span {
+  color: #c2410c;
+}
+
+.subtitleOverlay p {
+  color: var(--sun-text);
+}
+
+.voicePulse > span {
+  background: #fbbf24;
+}
+
+.voicePulse > span.voicePulseActive {
+  background: var(--sun-red);
+  box-shadow: 0 0 0 7px rgba(239, 68, 68, 0.11), 0 0 24px rgba(239, 68, 68, 0.5);
+}
+
+.cameraOffState {
+  background:
+    linear-gradient(135deg, rgba(255, 247, 237, 0.92), rgba(254, 243, 199, 0.82)),
+    #fff7ed;
+}
+
+.cameraOffState span {
+  color: var(--sun-muted);
+}
+
+.cameraControls {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 237, 213, 0.64)),
+    rgba(255, 255, 255, 0.74);
+}
+
+.cameraControl {
+  border-color: rgba(194, 65, 12, 0.14);
+  background: rgba(255, 255, 255, 0.74);
+  color: #9a3412;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 10px 24px rgba(154, 52, 18, 0.08);
+}
+
+.cameraControl:hover {
+  border-color: rgba(249, 115, 22, 0.34);
+  background: #fff7ed;
+  box-shadow: 0 0 24px rgba(249, 115, 22, 0.18);
+  color: #7c2d12;
+}
+
+.cameraControlActive {
+  border-color: rgba(249, 115, 22, 0.3);
+  background: linear-gradient(135deg, #facc15, #f97316);
+  color: #431407;
+  box-shadow: 0 14px 34px rgba(249, 115, 22, 0.22), 0 0 30px rgba(250, 204, 21, 0.18);
+}
+
+.cameraControlOff {
+  border-color: rgba(124, 45, 18, 0.13);
+  background: rgba(255, 247, 237, 0.58);
+  color: #b45309;
+}
+
+.cameraControlDanger {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: linear-gradient(135deg, #fb923c, #ef4444);
+  color: white;
+  box-shadow: 0 14px 34px rgba(239, 68, 68, 0.24);
+}
+
+.questionPanel,
+.insightPanel,
+.costSection,
+.waveformSection,
+.behaviorSection,
+.notesSection {
+  color: var(--sun-text);
+}
+
+.questionNumber,
+.difficulty,
+.questionTags span {
+  border-color: rgba(249, 115, 22, 0.2);
+  background: rgba(255, 247, 237, 0.76);
+  color: #9a3412;
+}
+
+.difficulty {
+  border-color: rgba(250, 204, 21, 0.44);
+  background: rgba(254, 249, 195, 0.78);
+  color: #854d0e;
+}
+
+.questionPanel h3,
+.feedbackSection h3,
+.costSection h3,
+.waveformSection h3,
+.behaviorSection h3,
+.notesSection h3,
+.guideHeader span {
+  color: var(--sun-text);
+}
+
+.aiStatus,
+.suggestedAnswer,
+.liveNote,
+.transcriptText,
+.emptyState {
+  border-color: rgba(249, 115, 22, 0.14);
+  background: rgba(255, 247, 237, 0.66);
+  color: var(--sun-muted);
+}
+
+.aiStatus p,
+.checkItem,
+.suggestedAnswer,
+.behaviorSection p,
+.feedbackLabel,
+.costBreakdown p,
+.costMeta span,
+.waveformInfo,
+.transcriptText,
+.notesInput {
+  color: var(--sun-muted);
+}
+
+.thinking span,
+.talking span,
+.waveBar {
+  background: linear-gradient(180deg, var(--sun-yellow), var(--sun-orange), var(--sun-red));
+  box-shadow: 0 0 18px rgba(249, 115, 22, 0.28);
+}
+
+.guideHeader small {
+  border-color: rgba(249, 115, 22, 0.22);
+  background: rgba(255, 247, 237, 0.74);
+  color: #c2410c;
+}
+
+.checkItem::before {
+  background: var(--sun-orange);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.32);
+}
+
+.speechMetric {
+  border-color: rgba(249, 115, 22, 0.16);
+  background: linear-gradient(135deg, rgba(255, 247, 237, 0.82), rgba(254, 249, 195, 0.56));
+}
+
+.speechMetric span {
+  color: #9a3412;
+}
+
+.speechMetric strong,
+.feedbackScore,
+.costBreakdown strong {
+  color: var(--sun-text);
+}
+
+.feedbackBar {
+  background: rgba(251, 146, 60, 0.16);
+}
+
+.feedbackFill {
+  background: linear-gradient(90deg, var(--sun-yellow), var(--sun-orange), var(--sun-red)) !important;
+  box-shadow: 0 0 22px rgba(249, 115, 22, 0.18);
+}
+
+.costTotal {
+  color: #c2410c;
+  text-shadow: 0 0 22px rgba(249, 115, 22, 0.16);
+}
+
+.costBreakdown {
+  border-color: rgba(249, 115, 22, 0.12);
+}
+
+.waveform {
+  border-color: rgba(249, 115, 22, 0.14);
+  background: rgba(255, 247, 237, 0.62);
+}
+
+.behaviorGrid span {
+  border-color: rgba(249, 115, 22, 0.14);
+  background: rgba(255, 247, 237, 0.7);
+  color: #7c2d12;
+}
+
+.notesInput {
+  border-color: rgba(249, 115, 22, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--sun-text);
+}
+
+.notesInput:focus {
+  border-color: rgba(249, 115, 22, 0.48);
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.1);
+}
+
+.notesBtn {
+  border-color: rgba(249, 115, 22, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 247, 237, 0.72));
+  color: #9a3412;
+}
+
+.notesBtn:hover {
+  border-color: rgba(249, 115, 22, 0.34);
+  background: rgba(255, 247, 237, 0.9);
+  color: #7c2d12;
+}
+
+.mediaNotice {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(254, 249, 195, 0.78);
+  color: #854d0e;
+}
+
+.statusBadge {
+  border-color: rgba(249, 115, 22, 0.22);
+  background: rgba(255, 247, 237, 0.86);
+  color: #9a3412;
+}
+
+@media (max-width: 1120px) {
+  .interviewContent {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Right rail readability refinements */
+
+.rightPanel > .questionPanel {
+  margin-top: 0;
+}
+
+.speechMetrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.insightPanel .feedbackSection h3 {
+  color: #3b1d0f;
+  font-weight: 950;
+}
+
+.insightPanel .feedbackItem {
+  color: #3b1d0f;
+}
+
+.insightPanel .feedbackLabel span {
+  color: #5f2e16;
+  font-weight: 850;
+}
+
+.insightPanel .feedbackScore {
+  min-width: 2.4rem;
+  border: 1px solid rgba(249, 115, 22, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 247, 237, 0.86);
+  color: #9a3412;
+  font-weight: 900;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .speechMetrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .interviewHeader,
+  .leftPanel,
+  .rightPanel,
+  .questionPanel,
+  .insightPanel,
+  .costSection,
+  .waveformSection,
+  .behaviorSection,
+  .notesSection {
+    border-radius: 18px;
+  }
+}
+
+/* ========== WHITE + PURPLE SAAS INTERVIEW DASHBOARD ========== */
+
+.interviewPage {
+  --vp-primary: #7c3aed;
+  --vp-secondary: #8b5cf6;
+  --vp-lavender: #f3f0ff;
+  --vp-bg: #f8f9fc;
+  --vp-card: #ffffff;
+  --vp-border: #e9eaf3;
+  --vp-text: #1f1f28;
+  --vp-muted: #70707b;
+  --vp-success: #22c55e;
+  --vp-danger: #ef4444;
+  --vp-shadow: 0 24px 70px rgba(31, 31, 40, 0.08);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(124, 58, 237, 0.1), transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(139, 92, 246, 0.12), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, var(--vp-bg) 42%, #f6f4ff 100%);
+  color: var(--vp-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.sunriseAmbient {
+  opacity: 0.1;
+  filter: hue-rotate(70deg) saturate(1.35) brightness(1.12);
+  mix-blend-mode: multiply;
+}
+
+.interviewHeader,
+.leftPanel,
+.rightPanel,
+.questionPanel,
+.insightPanel,
+.costSection,
+.waveformSection,
+.behaviorSection,
+.notesSection,
+.interviewSettingsPanel {
+  border: 1px solid var(--vp-border);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--vp-shadow);
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.interviewHeader {
+  margin: 1rem;
+  padding: 0.9rem 1rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.headerLeft h2,
+.questionPanel h3,
+.feedbackSection h3,
+.costSection h3,
+.waveformSection h3,
+.behaviorSection h3,
+.notesSection h3,
+.guideHeader span {
+  color: var(--vp-text);
+}
+
+.headerLeft h2 {
+  font-size: 1.08rem;
+  font-weight: 850;
+}
+
+.headerLeft p,
+.aiStatus p,
+.checkItem,
+.suggestedAnswer,
+.behaviorSection p,
+.feedbackLabel,
+.costBreakdown p,
+.costMeta span,
+.waveformInfo,
+.transcriptText,
+.notesInput {
+  color: var(--vp-muted);
+}
+
+.timer {
+  border: 1px solid rgba(124, 58, 237, 0.14);
+  border-radius: 999px;
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+  box-shadow: 0 12px 30px rgba(124, 58, 237, 0.1);
+}
+
+.interviewContent {
+  grid-template-columns: minmax(0, 1.74fr) minmax(330px, 0.9fr);
+  gap: 1rem;
+  padding: 0 1rem 1.25rem;
+}
+
+.leftPanel,
+.rightPanel {
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.cameraStage {
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.66), rgba(139, 92, 246, 0.5) 48%, rgba(243, 240, 255, 0.9)),
+    var(--vp-card);
+  box-shadow: 0 30px 90px rgba(31, 31, 40, 0.14), 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.cameraStage::before {
+  background:
+    linear-gradient(115deg, transparent 12%, rgba(124, 58, 237, 0.14) 38%, transparent 62%),
+    radial-gradient(circle at 76% 14%, rgba(139, 92, 246, 0.2), transparent 32%);
+  opacity: 0.72;
+}
+
+.cameraStageSpeaking {
+  box-shadow:
+    0 34px 100px rgba(31, 31, 40, 0.16),
+    0 0 0 1px rgba(124, 58, 237, 0.22),
+    0 0 70px rgba(124, 58, 237, 0.18);
+}
+
+.cameraFrame {
+  border-radius: 27px;
+  background: #0f1020;
+}
+
+.cameraGradient {
+  background:
+    linear-gradient(180deg, rgba(15, 16, 32, 0.45), transparent 22%, transparent 54%, rgba(15, 16, 32, 0.66)),
+    radial-gradient(circle at 76% 20%, rgba(124, 58, 237, 0.18), transparent 28%);
+}
+
+.cameraTopBar,
+.subtitleOverlay,
+.cameraHud,
+.cameraPip,
+.cameraControls {
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 20px 55px rgba(31, 31, 40, 0.12);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+
+.participantPill strong,
+.voicePulse strong,
+.cameraPip strong {
+  color: var(--vp-text);
+}
+
+.participantPill small,
+.recordingBadge,
+.cameraHud small,
+.cameraPip span {
+  color: var(--vp-muted);
+}
+
+.liveDot {
+  background: var(--vp-success);
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.12), 0 0 24px rgba(34, 197, 94, 0.35);
+}
+
+.recordingBadge {
+  border-color: rgba(124, 58, 237, 0.16);
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+}
+
+.recordingBadge::before {
+  background: var(--vp-secondary);
+}
+
+.recordingBadge.isLive {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.recordingBadge.isLive::before {
+  background: var(--vp-danger);
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.5);
+}
+
+.cameraPip {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.pipAvatar,
+.cameraOffState .avatar {
+  border-color: rgba(124, 58, 237, 0.26);
+  background: linear-gradient(135deg, var(--vp-primary), var(--vp-secondary));
+  color: white;
+  box-shadow: 0 18px 38px rgba(124, 58, 237, 0.22);
+}
+
+.pipWave span,
+.miniWaveform span,
+.thinking span,
+.waveBar {
+  background: linear-gradient(180deg, var(--vp-secondary), var(--vp-primary));
+  box-shadow: 0 0 18px rgba(124, 58, 237, 0.22);
+}
+
+.cameraAiPulse {
+  background: rgba(124, 58, 237, 0.16);
+}
+
+.subtitleOverlay {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.subtitleOverlay span {
+  color: var(--vp-primary);
+}
+
+.subtitleOverlay p {
+  color: var(--vp-text);
+}
+
+.voicePulse > span {
+  background: #c4b5fd;
+}
+
+.voicePulse > span.voicePulseActive {
+  background: var(--vp-primary);
+  box-shadow: 0 0 0 7px rgba(124, 58, 237, 0.12), 0 0 24px rgba(124, 58, 237, 0.45);
+}
+
+.cameraOffState {
+  background:
+    radial-gradient(circle at 50% 40%, rgba(124, 58, 237, 0.13), transparent 34%),
+    linear-gradient(135deg, #ffffff, var(--vp-lavender));
+}
+
+.cameraOffState span {
+  color: var(--vp-muted);
+}
+
+.cameraControls {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.cameraControl {
+  border-color: var(--vp-border);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--vp-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 10px 24px rgba(31, 31, 40, 0.07);
+}
+
+.cameraControl:hover {
+  border-color: rgba(124, 58, 237, 0.28);
+  background: var(--vp-lavender);
+  box-shadow: 0 0 26px rgba(124, 58, 237, 0.15);
+  color: var(--vp-primary);
+}
+
+.cameraControlActive {
+  border-color: rgba(124, 58, 237, 0.28);
+  background: linear-gradient(135deg, var(--vp-primary), var(--vp-secondary));
+  color: white;
+  box-shadow: 0 14px 34px rgba(124, 58, 237, 0.24), 0 0 30px rgba(139, 92, 246, 0.18);
+}
+
+.cameraControlOff {
+  border-color: var(--vp-border);
+  background: #f4f4f7;
+  color: #8b8b96;
+}
+
+.cameraControlDanger {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: linear-gradient(135deg, #fb7185, var(--vp-danger));
+  color: white;
+  box-shadow: 0 14px 34px rgba(239, 68, 68, 0.22);
+}
+
+.questionNumber,
+.difficulty,
+.questionTags span {
+  border-color: rgba(124, 58, 237, 0.14);
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+}
+
+.difficulty {
+  border-color: rgba(139, 92, 246, 0.2);
+  background: #f7f5ff;
+}
+
+.aiStatus,
+.suggestedAnswer,
+.liveNote,
+.transcriptText,
+.emptyState {
+  border-color: var(--vp-border);
+  background: #fbfbfe;
+  color: var(--vp-muted);
+}
+
+.guideHeader small {
+  border-color: rgba(124, 58, 237, 0.16);
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+}
+
+.checkItem::before {
+  background: var(--vp-primary);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.28);
+}
+
+.speechMetric {
+  border-color: rgba(124, 58, 237, 0.12);
+  background: linear-gradient(135deg, #ffffff, var(--vp-lavender));
+}
+
+.speechMetric span {
+  color: var(--vp-muted);
+}
+
+.speechMetric strong,
+.feedbackScore,
+.costBreakdown strong {
+  color: var(--vp-text);
+}
+
+.feedbackBar {
+  background: #ece9fb;
+}
+
+.feedbackFill {
+  background: linear-gradient(90deg, var(--vp-primary), var(--vp-secondary)) !important;
+  box-shadow: 0 0 22px rgba(124, 58, 237, 0.16);
+}
+
+.insightPanel .feedbackSection h3 {
+  color: var(--vp-text);
+}
+
+.insightPanel .feedbackItem {
+  color: var(--vp-text);
+}
+
+.insightPanel .feedbackLabel span {
+  color: var(--vp-muted);
+}
+
+.insightPanel .feedbackScore {
+  border-color: rgba(124, 58, 237, 0.14);
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+}
+
+.costTotal {
+  color: var(--vp-primary);
+  text-shadow: none;
+}
+
+.costBreakdown {
+  border-color: var(--vp-border);
+}
+
+.waveform {
+  border-color: var(--vp-border);
+  background: #fbfbfe;
+}
+
+.behaviorGrid span {
+  border-color: var(--vp-border);
+  background: #fbfbfe;
+  color: var(--vp-text);
+}
+
+.notesInput {
+  border-color: var(--vp-border);
+  background: #ffffff;
+  color: var(--vp-text);
+}
+
+.notesInput:focus {
+  border-color: rgba(124, 58, 237, 0.42);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1);
+}
+
+.mediaNotice {
+  border-color: rgba(124, 58, 237, 0.18);
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+}
+
+.interviewSettingsPanel {
+  width: min(560px, 100%);
+  margin: -0.3rem auto 0;
+  padding: 0.9rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.interviewSettingsPanel div,
+.interviewSettingsPanel label {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.interviewSettingsPanel strong {
+  color: var(--vp-text);
+  font-size: 0.86rem;
+}
+
+.interviewSettingsPanel span,
+.interviewSettingsPanel label {
+  color: var(--vp-muted);
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.interviewSettingsPanel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.interviewSettingsPanel input {
+  accent-color: var(--vp-primary);
+}
+
+@media (max-width: 1120px) {
+  .interviewContent {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .interviewSettingsPanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Compact interviewer identity surfaces */
+
+.headerLeft {
+  min-width: 0;
+  max-width: min(420px, 48vw);
+}
+
+.headerLeft h2,
+.headerLeft p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerLeft h2 {
+  font-size: 0.96rem;
+}
+
+.headerLeft p {
+  font-size: 0.72rem;
+}
+
+.cameraPip {
+  top: 4.7rem;
+  width: min(188px, 24%);
+  min-width: 146px;
+  gap: 0.48rem;
+  padding: 0.48rem;
+  border-radius: 16px;
+}
+
+.pipAvatar {
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 12px;
+  font-size: 0.68rem;
+}
+
+.cameraPip strong {
+  font-size: 0.72rem;
+}
+
+.cameraPip span {
+  font-size: 0.66rem;
+}
+
+.pipWave {
+  display: none;
+}
+
+.leftPanel > .insightPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
+  align-items: start;
+}
+
+.leftPanel > .insightPanel .feedbackSection {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.metricsPanel {
+  gap: 0.6rem;
+}
+
+@media (max-width: 1120px) {
+  .leftPanel > .insightPanel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Premium analytics dashboard */
+
+.leftPanel > .analyticsDashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(248, 249, 252, 0.86)),
+    rgba(255, 255, 255, 0.82);
+}
+
+.analyticsHeader,
+.analyticsCardHeader,
+.metricWidgetTop,
+.metricValueRow,
+.speakingStats,
+.analyticsLivePill {
+  display: flex;
+  align-items: center;
+}
+
+.analyticsHeader {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.analyticsHeader span,
+.analyticsCardHeader span {
+  color: var(--vp-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.analyticsHeader h3,
+.analyticsCardHeader h3 {
+  margin: 0.16rem 0 0;
+  color: var(--vp-text);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.analyticsLivePill {
+  gap: 0.42rem;
+  flex-shrink: 0;
+  padding: 0.44rem 0.7rem;
+  border: 1px solid rgba(124, 58, 237, 0.14);
+  border-radius: 999px;
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.analyticsLivePill span,
+.metricPulse {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--vp-primary);
+  box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.1);
+  animation: metricPulse 1.8s ease-in-out infinite;
+}
+
+.aiWarningCard {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(239, 68, 68, 0.14);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #fff1f2, #ffffff);
+  color: #991b1b;
+}
+
+.aiWarningCard strong {
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.aiWarningCard span {
+  color: #b4535a;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.analyticsTopGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.analyticsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.analyticsTopGrid .analyticsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metricWidget,
+.radarCard,
+.aiSummaryCard,
+.behaviorSnapshotCard {
+  border: 1px solid var(--vp-border);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 48px rgba(31, 31, 40, 0.07);
+}
+
+.metricWidget {
+  display: grid;
+  gap: 0.58rem;
+  min-height: 136px;
+  padding: 0.85rem;
+}
+
+.metricWidgetTop {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.metricWidgetTop small {
+  overflow: hidden;
+  color: var(--vp-muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricWidget strong {
+  color: var(--vp-text);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.speechMetricWidget {
+  background:
+    linear-gradient(145deg, rgba(243, 240, 255, 0.9), rgba(255, 255, 255, 0.94)),
+    #ffffff;
+}
+
+.speechMetricWidget .metricValueRow span {
+  color: #5b21b6;
+}
+
+.metricValueRow {
+  align-items: baseline;
+  gap: 0.22rem;
+}
+
+.metricValueRow span {
+  color: var(--vp-primary);
+  font-size: 1.55rem;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.metricValueRow small {
+  color: var(--vp-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.metricProgress {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eeeafd;
+}
+
+.metricProgress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c4b5fd, var(--vp-primary), var(--vp-secondary));
+  box-shadow: 0 0 18px rgba(124, 58, 237, 0.2);
+}
+
+.analyticsDeepGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.radarCard,
+.aiSummaryCard,
+.behaviorSnapshotCard {
+  padding: 1rem;
+}
+
+.analyticsCardHeader {
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.radarCard {
+  min-height: 288px;
+}
+
+.analyticsTopGrid .radarCard {
+  min-height: 100%;
+}
+
+.aiSummaryCard p,
+.behaviorSnapshotCard p {
+  margin: 0;
+  color: var(--vp-muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.liveInsights {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.liveInsights span {
+  position: relative;
+  padding-left: 0.85rem;
+  color: var(--vp-text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.liveInsights span::before {
+  content: "";
+  position: absolute;
+  top: 0.48rem;
+  left: 0;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: var(--vp-primary);
+}
+
+.behaviorSnapshotCard {
+  grid-column: span 1;
+}
+
+.analyticsWaveform {
+  display: flex;
+  align-items: end;
+  gap: 0.2rem;
+  height: 78px;
+  padding: 0.75rem;
+  border: 1px solid var(--vp-border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f8f6ff);
+}
+
+.analyticsWaveform span {
+  flex: 1;
+  min-width: 0.18rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ddd6fe, var(--vp-secondary), var(--vp-primary));
+}
+
+.waveformSection .analyticsWaveform {
+  margin-bottom: 0.75rem;
+}
+
+.liveStatusDot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--vp-primary);
+  box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.1);
+}
+
+.speakingStats {
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.speakingStats span {
+  padding: 0.36rem 0.55rem;
+  border: 1px solid rgba(124, 58, 237, 0.12);
+  border-radius: 999px;
+  background: var(--vp-lavender);
+  color: var(--vp-primary);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.analyticsDashboard .behaviorGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 0.8rem;
+}
+
+.analyticsDashboard .behaviorGrid span {
+  border-color: rgba(124, 58, 237, 0.12);
+  background: #fbfaff;
+  color: var(--vp-text);
+  font-size: 0.74rem;
+}
+
+.analyticsDashboard .feedbackSection {
+  padding-top: 0.1rem;
+}
+
+.analyticsDashboard .feedbackSection h3 {
+  margin-bottom: 0.75rem;
+}
+
+.analyticsDashboard .feedbackScores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.analyticsDashboard .feedbackItem {
+  padding: 0.72rem;
+  border: 1px solid var(--vp-border);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+@keyframes metricPulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@media (max-width: 1180px) {
+  .analyticsTopGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .analyticsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analyticsDeepGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .analyticsTopGrid .analyticsGrid,
+  .analyticsGrid,
+  .analyticsDashboard .feedbackScores,
+  .analyticsDashboard .behaviorGrid {
+    grid-template-columns: 1fr;
   }
 }

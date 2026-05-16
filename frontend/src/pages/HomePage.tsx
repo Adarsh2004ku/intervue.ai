@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bell, Settings, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Bell, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import {
   ApiError,
   CostsResponse,
   DashboardResponse,
   InterviewMode,
   InterviewRecord,
-  MetricsResponse,
   Resume,
   UserProfile,
   activeInterviewStore,
@@ -46,7 +46,6 @@ const HomePage: React.FC = () => {
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [costs, setCosts] = useState<CostsResponse | null>(null);
-  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
   const [jobDescription, setJobDescription] = useState('');
@@ -70,13 +69,11 @@ const HomePage: React.FC = () => {
         setLoading(true);
         const localInterviews = interviewHistoryStore().list();
         const me = await api.auth.me();
-        const [adminResult, resumeResult, interviewResult, costsResult, metricsResult] = await Promise.allSettled([
+        const [adminResult, resumeResult, interviewResult, costsResult] = await Promise.allSettled([
           api.admin.dashboard(),
           api.resume.list(),
           api.interview.list(),
           api.admin.costs(7),
-          api.admin.metrics(),
-          api.interview.health(),
         ]);
 
         const adminData = adminResult.status === 'fulfilled'
@@ -97,23 +94,18 @@ const HomePage: React.FC = () => {
         const costsData = costsResult.status === 'fulfilled'
           ? costsResult.value
           : null;
-        const metricsData = metricsResult.status === 'fulfilled'
-          ? metricsResult.value
-          : null;
         const dashboardData = normalizeDashboard(adminData, resumeData.resumes, recentInterviews);
 
         setProfile(me);
         setDashboard(dashboardData);
         setResumes(resumeData.resumes);
         setCosts(costsData);
-        setMetrics(metricsData);
         setSelectedResumeId(resumeData.resumes[0]?.id || dashboardData.resumes[0]?.id || '');
         if (
           adminResult.status === 'rejected'
           || resumeResult.status === 'rejected'
           || interviewResult.status === 'rejected'
           || costsResult.status === 'rejected'
-          || metricsResult.status === 'rejected'
         ) {
           setStatus('Logged in. Some dashboard data is temporarily unavailable.');
         }
@@ -136,47 +128,36 @@ const HomePage: React.FC = () => {
     ? dashboard.score_trend
     : [{ name: 'No scores yet', score: 0 }];
 
-  const barData = dashboard.activities.length
-    ? dashboard.activities
-    : [{ name: 'No activity yet', value: 0 }];
-
   const statCards = useMemo(() => [
     {
       label: 'Overall Readiness',
       value: `${dashboard.stats.overall_readiness || 0}%`,
       status: dashboard.stats.completed_interviews ? 'Based on completed interviews' : 'No completed interviews yet',
       trend: `${dashboard.stats.completed_interviews} completed`,
-      color: '#10b981',
+      color: '#7C3AED',
     },
     {
       label: 'Interviews Taken',
       value: String(dashboard.stats.total_interviews),
       status: 'All sessions',
       trend: `${dashboard.stats.resume_count} resumes uploaded`,
-      color: '#6366f1',
+      color: '#8B5CF6',
     },
     {
       label: 'Average Score',
       value: String(dashboard.stats.average_score || 0),
       status: '/100',
       trend: dashboard.stats.average_score >= 75 ? 'Strong progress' : 'Keep practicing',
-      color: '#f59e0b',
+      color: '#7C3AED',
     },
     {
       label: 'AI Spend',
       value: `₹${(costs?.total_cost_inr ?? costs?.records.reduce((total, item) => total + (item.cost_inr || 0), 0) ?? 0).toFixed(2)}`,
       status: 'Last 7 days',
       trend: `${costs?.records.length || 0} calls · ${costs?.total_tokens || 0} tokens`,
-      color: '#ec4899',
+      color: '#8B5CF6',
     },
-    {
-      label: 'API Health',
-      value: metrics?.status || 'Checking',
-      status: metrics?.supabase_connected ? 'Database connected' : 'Database unavailable',
-      trend: metrics?.redis_connected ? `Redis ${metrics.redis_memory || 'connected'}` : metrics?.redis_error || 'Redis unavailable',
-      color: '#0891b2',
-    },
-  ], [costs, dashboard, metrics]);
+  ], [costs, dashboard]);
 
   const handleLogout = () => {
     tokenStore.clear();
@@ -333,8 +314,8 @@ const HomePage: React.FC = () => {
 
   const tabCopy = {
     overview: {
-      title: 'Dashboard',
-      description: 'Your interview activity, readiness, and next best action.',
+      title: 'Home',
+      description: 'Your readiness, recent progress, and next best action.',
     },
     interviews: {
       title: 'Interviews',
@@ -356,7 +337,6 @@ const HomePage: React.FC = () => {
 
   const selectedResume = resumes.find((resume) => resume.id === selectedResumeId);
   const reportInterviews = dashboard.recent_interviews.filter((interview) => interview.status === 'completed');
-  const displayedInterviews = activeTab === 'reports' ? reportInterviews : dashboard.recent_interviews;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -373,6 +353,7 @@ const HomePage: React.FC = () => {
 
   return (
     <div className={styles.homePage}>
+      <ImmersiveStage variant="ambient" />
       <motion.aside
         className={styles.sidebar}
         initial={{ x: -250 }}
@@ -431,11 +412,8 @@ const HomePage: React.FC = () => {
               <Bell size={20} />
               <span className={styles.badge}>{dashboard.stats.total_interviews}</span>
             </motion.button>
-            <motion.button className={styles.iconBtn} whileHover={{ scale: 1.1 }} onClick={() => setActiveTab('practice')}>
-              <Settings size={20} />
-            </motion.button>
             <motion.div className={styles.userProfile} whileHover={{ scale: 1.05 }}>
-              <div className={styles.avatar}>{profile?.full_name?.[0]?.toUpperCase() || '👤'}</div>
+              <div className={styles.avatar}>{profile?.full_name?.[0]?.toUpperCase() || 'U'}</div>
             </motion.div>
           </div>
         </motion.header>
@@ -470,7 +448,7 @@ const HomePage: React.FC = () => {
           </div>
         )}
 
-        {(activeTab === 'overview' || activeTab === 'practice') && <motion.div
+        {activeTab === 'overview' && <motion.div
           className={styles.statsGrid}
           variants={containerVariants}
           initial="hidden"
@@ -496,7 +474,7 @@ const HomePage: React.FC = () => {
           ))}
         </motion.div>}
 
-        {(activeTab === 'overview' || activeTab === 'resumes' || activeTab === 'practice') && <motion.section
+        {activeTab === 'practice' && <motion.section
           className={styles.launchPanel}
           variants={containerVariants}
           initial="hidden"
@@ -534,9 +512,9 @@ const HomePage: React.FC = () => {
             <div className={styles.formRow}>
               <input value={jobRole} onChange={(event) => setJobRole(event.target.value)} placeholder="Job role" />
               <select value={interviewMode} onChange={(event) => setInterviewMode(event.target.value as InterviewMode)}>
-                <option value="faang">FAANG full loop</option>
-                <option value="startup">Startup case loop</option>
-                <option value="hr">HR behavioral loop</option>
+                <option value="faang">FAANG technical interview</option>
+                <option value="startup">Startup product interview</option>
+                <option value="hr">HR behavioral interview</option>
               </select>
               <button type="submit" disabled={starting || !selectedResumeId}>
                 {starting ? 'Starting...' : 'Start'}
@@ -549,11 +527,15 @@ const HomePage: React.FC = () => {
           <section className={styles.resumePanel}>
             <div className={styles.sectionHeader}>
               <h3>Saved Resumes</h3>
-              <span>{resumes.length} uploaded</span>
+              <label className={styles.uploadButton}>
+                {uploading ? 'Uploading...' : 'Upload PDF/DOCX'}
+                <input type="file" accept=".pdf,.docx" onChange={handleResumeUpload} disabled={uploading} />
+              </label>
             </div>
+            <p className={styles.sectionMeta}>{resumes.length} uploaded · selected resumes personalize every interview.</p>
 
             {resumes.length === 0 && (
-              <p className={styles.emptyState}>No resumes saved yet. Upload a PDF or DOCX above and it will be stored in Supabase.</p>
+              <p className={styles.emptyState}>No resumes saved yet. Upload a PDF or DOCX to start personalizing interviews.</p>
             )}
 
             <div className={styles.resumeList}>
@@ -607,36 +589,18 @@ const HomePage: React.FC = () => {
                 <Line
                   type="monotone"
                   dataKey="score"
-                  stroke="#6366f1"
+                  stroke="#7C3AED"
                   strokeWidth={3}
-                  dot={{ fill: '#6366f1', r: 5 }}
+                  dot={{ fill: '#7C3AED', r: 5 }}
                   activeDot={{ r: 7 }}
                   animationDuration={1000}
                 />
               </LineChart>
             </ResponsiveContainer>
           </motion.div>
-
-          <motion.div className={styles.chart} variants={itemVariants}>
-            <h3>Practice Activities</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                <Bar
-                  dataKey="value"
-                  fill="#8b5cf6"
-                  radius={[8, 8, 0, 0]}
-                  animationDuration={1000}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
         </motion.div>}
 
-        {(activeTab === 'overview' || activeTab === 'interviews' || activeTab === 'reports') && <motion.div
+        {activeTab === 'overview' && <motion.div
           className={styles.bottomSection}
           variants={containerVariants}
           initial="hidden"
@@ -645,19 +609,15 @@ const HomePage: React.FC = () => {
         >
           <motion.div className={styles.recentInterviews} variants={itemVariants}>
             <div className={styles.sectionHeader}>
-              <h3>{activeTab === 'reports' ? 'Completed Reports' : 'Recent Interviews'}</h3>
+              <h3>Recent Interviews</h3>
               <button className={styles.linkButton} type="button" onClick={() => setActiveTab('interviews')}>View all</button>
             </div>
 
-            {displayedInterviews.length === 0 && (
-              <p className={styles.emptyState}>
-                {activeTab === 'reports'
-                  ? 'No completed reports yet. Complete an interview first.'
-                  : 'No interviews yet. Start one from the practice tab.'}
-              </p>
+            {dashboard.recent_interviews.length === 0 && (
+              <p className={styles.emptyState}>No interviews yet. Start one from the practice tab.</p>
             )}
 
-            {displayedInterviews.map((interview) => (
+            {dashboard.recent_interviews.map((interview) => (
               <motion.div
                 key={interview.id}
                 className={styles.interviewItem}
@@ -667,10 +627,10 @@ const HomePage: React.FC = () => {
               >
                 <div className={styles.interviewInfo}>
                   <div className={styles.interviewIcon}>
-                    <span>🎬</span>
+                    <BookOpen size={18} />
                   </div>
                   <div className={styles.interviewDetails}>
-                    <h4>{interview.job_role}</h4>
+                    <h4>{interview.job_role || 'Interview session'}</h4>
                     <p>
                       {formatDate(interview.completed_at || interview.created_at)}
                       {' · '}
@@ -696,7 +656,7 @@ const HomePage: React.FC = () => {
                     </button>
                   )}
                   <div className={styles.scoreCircle} style={{
-                    background: `conic-gradient(#6366f1 ${(interview.overall_score || 0) * 3.6}deg, #e2e8f0 0deg)`,
+                    background: `conic-gradient(#7C3AED ${(interview.overall_score || 0) * 3.6}deg, #E9EAF3 0deg)`,
                   }}>
                     <span>{interview.overall_score || 0}</span>
                   </div>
@@ -719,9 +679,9 @@ const HomePage: React.FC = () => {
                   className={styles.recommendationCard}
                   variants={itemVariants}
                   whileHover={{ scale: 1.05 }}
-                  style={{ borderLeftColor: ['#6366f1', '#8b5cf6', '#ec4899'][index % 3] }}
+                  style={{ borderLeftColor: ['#7C3AED', '#8B5CF6', '#DDD6FE'][index % 3] }}
                 >
-                  <span className={styles.recIcon}>{['🎯', '🗣️', '💻'][index % 3]}</span>
+                  <span className={styles.recIcon}>{String(index + 1).padStart(2, '0')}</span>
                   <h4>{rec.title}</h4>
                   <p>{rec.description}</p>
                   <motion.button
@@ -736,6 +696,117 @@ const HomePage: React.FC = () => {
             </motion.div>
           </motion.div>
         </motion.div>}
+
+        {activeTab === 'interviews' && (
+          <motion.section
+            className={styles.recentInterviews}
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <div className={styles.sectionHeader}>
+              <h3>All Interviews</h3>
+              <span>{dashboard.recent_interviews.length} sessions</span>
+            </div>
+
+            {dashboard.recent_interviews.length === 0 && (
+              <p className={styles.emptyState}>No interviews yet. Start one from the practice tab.</p>
+            )}
+
+            {dashboard.recent_interviews.map((interview) => (
+              <motion.div
+                key={interview.id}
+                className={styles.interviewItem}
+                variants={itemVariants}
+                whileHover={{ x: 10 }}
+                transition={{ duration: 0.3 }}
+                onClick={() => navigate(`/interview?interviewId=${interview.id}`)}
+              >
+                <div className={styles.interviewInfo}>
+                  <div className={styles.interviewIcon}>
+                    <BookOpen size={18} />
+                  </div>
+                  <div className={styles.interviewDetails}>
+                    <h4>{interview.job_role || 'Interview session'}</h4>
+                    <p>
+                      {formatDate(interview.completed_at || interview.created_at)}
+                      {' · '}
+                      {interview.status}
+                      {interview.job_description ? ' · job description tailored' : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className={styles.interviewScore}>
+                  <div className={styles.scoreCircle} style={{
+                    background: `conic-gradient(#7C3AED ${(interview.overall_score || 0) * 3.6}deg, #E9EAF3 0deg)`,
+                  }}>
+                    <span>{interview.overall_score || 0}</span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.section>
+        )}
+
+        {activeTab === 'reports' && (
+          <motion.section
+            className={styles.recentInterviews}
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <div className={styles.sectionHeader}>
+              <h3>Completed Reports</h3>
+              <span>{reportInterviews.length} ready</span>
+            </div>
+
+            {reportInterviews.length === 0 && (
+              <p className={styles.emptyState}>No completed reports yet. Complete an interview first.</p>
+            )}
+
+            {reportInterviews.map((interview) => (
+              <motion.div
+                key={interview.id}
+                className={styles.interviewItem}
+                variants={itemVariants}
+                whileHover={{ x: 10 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className={styles.interviewInfo}>
+                  <div className={styles.interviewIcon}>
+                    <BarChart3 size={18} />
+                  </div>
+                  <div className={styles.interviewDetails}>
+                    <h4>{interview.job_role || 'Completed interview'}</h4>
+                    <p>
+                      {formatDate(interview.completed_at || interview.created_at)}
+                      {' · '}
+                      Score {interview.overall_score || 0}/100
+                      {interview.job_description ? ' · job description tailored' : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className={styles.interviewScore}>
+                  <button
+                    type="button"
+                    className={styles.pdfAction}
+                    disabled={downloadingReportId === interview.id}
+                    title="Download PDF report"
+                    onClick={() => handleDownloadReport(interview)}
+                  >
+                    <FileDown size={16} />
+                    <span>{downloadingReportId === interview.id ? 'Generating' : 'PDF report'}</span>
+                  </button>
+                  <div className={styles.scoreCircle} style={{
+                    background: `conic-gradient(#7C3AED ${(interview.overall_score || 0) * 3.6}deg, #E9EAF3 0deg)`,
+                  }}>
+                    <span>{interview.overall_score || 0}</span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.section>
+        )}
       </div>
     </div>
   );

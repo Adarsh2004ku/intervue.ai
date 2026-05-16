@@ -173,6 +173,17 @@ export type AudioEvaluation = {
   confidence_score: number;
   communication_score: number;
   reasoning: string;
+  word_count?: number;
+  stopword_count?: number;
+  filler_count?: number;
+  keyword_overlap_percent?: number;
+  words_per_minute?: number;
+  speech_metrics?: {
+    word_count?: number;
+    stopword_count?: number;
+    filler_count?: number;
+    words_per_minute?: number;
+  };
   provider?: string;
   model?: string;
 };

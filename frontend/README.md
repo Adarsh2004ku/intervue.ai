@@ -34,7 +34,6 @@ To point the frontend at another backend, set:
 ```bash
 VITE_API_BASE_URL=https://your-api.example.com/api/v1
 VITE_WS_BASE_URL=wss://your-api.example.com/api/v1
-VITE_SUPABASE_URL=https://your-project.supabase.co
 ```
 
 ## Scripts
@@ -71,8 +70,9 @@ The frontend API client lives in `src/services/api.ts` and connects to:
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/signup`
-- `POST /api/v1/auth/supabase-session`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/auth/google`
+- `GET /api/v1/auth/callback`
 - `GET /api/v1/resume`
 - `POST /api/v1/resume/upload`
 - `GET /api/v1/interview/dashboard`
@@ -80,3 +80,6 @@ The frontend API client lives in `src/services/api.ts` and connects to:
 - `POST /api/v1/interview/start`
 - `GET /api/v1/interview/{id}/status`
 - `WS /api/v1/interview/{id}/session`
+
+Supabase URL and service keys belong in `backend/.env`. The frontend does not
+connect to Supabase directly; Google OAuth is started through the Python backend.
