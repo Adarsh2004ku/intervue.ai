@@ -14,7 +14,7 @@ from pydantic import BaseModel, EmailStr
 from urllib.parse import urlencode
 from backend.core.security import create_access_token, get_current_user
 from backend.core.config import settings
-from backend.db.session import get_supabase_client, supabase
+from backend.db.session import get_supabase_client
 from backend.core.logging import get_logger
 
 logger = get_logger("auth")
@@ -82,6 +82,24 @@ def _upsert_user(auth_user, full_name: str = "", db_client=None):
     }).execute()
 
 
+def _auth_user_email(auth_user, fallback_email: str = "") -> str:
+    return auth_user.email or fallback_email
+
+
+def _create_app_token(auth_user, fallback_email: str = "") -> tuple[str, str]:
+    email = _auth_user_email(auth_user, fallback_email)
+    return create_access_token({"sub": auth_user.id, "email": email}), email
+
+
+def _token_response_for_auth_user(auth_user, fallback_email: str = "") -> TokenResponse:
+    token, email = _create_app_token(auth_user, fallback_email)
+    return TokenResponse(
+        access_token=token,
+        user_id=auth_user.id,
+        email=email,
+    )
+
+
 def _is_duplicate_signup_error(error: Exception) -> bool:
     """Detect Supabase duplicate-user errors across client/library versions."""
     message = str(error).lower()
@@ -136,14 +154,8 @@ async def signup(req: SignupRequest):
                 error=str(profile_error),
             )
 
-        token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
-
         logger.info("user_signed_up", email=req.email)
-        return TokenResponse(
-            access_token=token,
-            user_id=auth_user.id,
-            email=auth_user.email or req.email,
-        )
+        return _token_response_for_auth_user(auth_user, req.email)
     except HTTPException:
         raise
     except Exception as e:
@@ -189,14 +201,8 @@ async def login(req: LoginRequest):
                 error=str(profile_error),
             )
 
-        token = create_access_token({"sub": auth_user.id, "email": auth_user.email or req.email})
-
         logger.info("user_logged_in", email=req.email)
-        return TokenResponse(
-            access_token=token,
-            user_id=auth_user.id,
-            email=auth_user.email or req.email,
-        )
+        return _token_response_for_auth_user(auth_user, req.email)
     except HTTPException:
         raise
     except Exception as e:
@@ -227,15 +233,10 @@ async def login_with_supabase_session(req: SupabaseSessionRequest):
 
         _upsert_user(auth_user)
 
-        email = auth_user.email or ""
-        token = create_access_token({"sub": auth_user.id, "email": email})
+        response = _token_response_for_auth_user(auth_user)
 
-        logger.info("user_supabase_session_login", email=email)
-        return TokenResponse(
-            access_token=token,
-            user_id=auth_user.id,
-            email=email,
-        )
+        logger.info("user_supabase_session_login", email=response.email)
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -339,8 +340,7 @@ async def oauth_callback(
 
         _upsert_user(auth_user)
 
-        email = auth_user.email or ""
-        token = create_access_token({"sub": auth_user.id, "email": email})
+        token, email = _create_app_token(auth_user)
 
         logger.info("google_oauth_success", email=email)
 

@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from fastapi import FastAPI
 from backend.core.config import settings
+from backend.core.health import build_health_payload
 from backend.core.middleware import setup_cors, log_requests
 from backend.core.logging import setup_logging, get_logger
 from backend.db.session import check_db_connection
@@ -73,10 +74,4 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    db_status = check_db_connection()
-    return {
-        "status": "ok",
-        "version": "1.0.0",
-        "environment": settings.environment,
-        "database": db_status,
-    }
+    return build_health_payload()

@@ -13,6 +13,7 @@ from fastapi import (
 from pydantic import BaseModel
 
 from ai.agents.generator import clean_job_description
+from ai.agents.state import build_interview_state
 from ai.personas.interviewer_personas import get_persona
 from backend.core.logging import get_logger
 from backend.core.security import get_current_user
@@ -117,29 +118,18 @@ async def start_interview(
         job_description=created_interview["job_description"],
         interview_id=interview_id,
     )
-    agent_state = {
-        "user_id": user["sub"],
-        "interview_id": interview_id,
-        "resume_id": req.resume_id or "",
-        "job_role": created_interview["job_role"],
-        "job_description": created_interview["job_description"],
-        "resume_summary": parsed_resume,
-        "difficulty": "medium",
-        "interview_plan": interview_plan,
-        "questions": [first_question_payload],
-        "answers": [],
-        "evaluations": [],
-        "speech_metrics": [],
-        "behavior_data": [],
-        "current_index": 0,
-        "weak_topics": [],
-        "strong_topics": [],
-        "session_topic_scores": {},
-        "interview_mode": req.interview_mode,
-        "difficulty_profile": "beginner",
-        "retrieved_chunks": [],
-        "report": None,
-    }
+    agent_state = build_interview_state(
+        user_id=user["sub"],
+        interview_id=interview_id,
+        resume_id=req.resume_id or "",
+        job_role=created_interview["job_role"],
+        job_description=created_interview["job_description"],
+        resume_summary=parsed_resume,
+        interview_mode=req.interview_mode,
+        difficulty="medium",
+        interview_plan=interview_plan,
+        questions=[first_question_payload],
+    )
 
     reset_interview_session(
         interview_id,

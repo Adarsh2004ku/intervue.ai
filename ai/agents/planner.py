@@ -3,8 +3,9 @@ from backend.core.config import settings
 from backend.db.session import supabase
 from ai.agents.llm import invoke_llm_text
 from ai.personas.interviewer_personas import get_persona
-from ai.agents.state import InterviewState
+from ai.agents.state import InterviewState, empty_interview_state_fields
 from backend.core.logging import get_logger
+from backend.services.interview.topic_profile import fetch_strong_topics, fetch_weak_topics
 
 """
 Planner Agent — the first agent in the LangGraph.
@@ -105,38 +106,6 @@ def _fallback_interview_plan(
     return plan
 
 
-def _fetch_weak_topics(user_id:str, threshold:int = 60)->list[str]:
-    """Fetch topics where user's avg_score is below threshold."""
-    try :
-        result = (
-            supabase.table("user_topic_profiles")
-            .select("topic, avg_score")
-            .eq("user_id", user_id)
-            .lt("avg_score", threshold)
-            .order("avg_score")
-            .execute()
-        )
-        return [r["topic"] for r in (result.data or [])]
-    except Exception as e:
-        logger.warning("weak_topics_fetch_failed", error=str(e))
-        return [] 
-
-def _fetch_strong_topics(user_id: str, threshold: int = 75) -> list[str]:
-    """Fetch topics where user's avg_score is above threshold."""
-    try:
-        result = (
-            supabase.table("user_topic_profiles")
-            .select("topic, avg_score")
-            .eq("user_id", user_id)
-            .gte("avg_score", threshold)
-            .execute()
-        )
-        return [r["topic"] for r in (result.data or [])]
-    except Exception as e:
-        logger.warning("strong_topics_fetch_failed", error=str(e))
-        return []
-    
-
 def _get_difficulty_profile(user_id: str) -> str:
     """Get user's persisted difficulty profile from DB."""
     try:
@@ -151,6 +120,7 @@ def _get_difficulty_profile(user_id: str) -> str:
     except Exception:
         return "beginner"
 
+
 def planner_agent(state: InterviewState) -> dict:
     """
     Plan the interview based on job role, resume, and weakness profile.
@@ -163,8 +133,8 @@ def planner_agent(state: InterviewState) -> dict:
     resume_summary = state.get("resume_summary", {})
 
     # Fetch user's historical topic performance
-    weak_topics = _fetch_weak_topics(user_id)
-    strong_topics = _fetch_strong_topics(user_id)
+    weak_topics = fetch_weak_topics(user_id)
+    strong_topics = fetch_strong_topics(user_id)
     difficulty_profile = _get_difficulty_profile(user_id)
 
     persona = get_persona(interview_mode)
@@ -252,15 +222,7 @@ def planner_agent(state: InterviewState) -> dict:
             "weak_topics": weak_topics,
             "strong_topics": strong_topics,
             "difficulty_profile": difficulty_profile,
-            "questions": [],
-            "answers": [],
-            "evaluations": [],
-            "speech_metrics": [],
-            "behavior_data": [],
-            "current_index": 0,
-            "session_topic_scores": {},
-            "retrieved_chunks": [],
-            "report": None,
+            **empty_interview_state_fields(),
         }
     except (json.JSONDecodeError, Exception) as e:
         logger.error("planner_failed", error=str(e))
@@ -276,13 +238,5 @@ def planner_agent(state: InterviewState) -> dict:
             "weak_topics": weak_topics,
             "strong_topics": strong_topics,
             "difficulty_profile": difficulty_profile,
-            "questions": [],
-            "answers": [],
-            "evaluations": [],
-            "speech_metrics": [],
-            "behavior_data": [],
-            "current_index": 0,
-            "session_topic_scores": {},
-            "retrieved_chunks": [],
-            "report": None,
+            **empty_interview_state_fields(),
         }

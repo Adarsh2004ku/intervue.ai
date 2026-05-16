@@ -21,11 +21,11 @@ def client():
 def mock_supabase():
     """Mock Supabase client for testing."""
     with patch("backend.db.session.supabase") as mock_sb, \
-         patch("backend.api.v1.routes.auth.supabase", mock_sb), \
          patch("backend.api.v1.routes.auth.get_supabase_client") as mock_auth_client, \
          patch("backend.api.v1.routes.resume.supabase", mock_sb), \
          patch("backend.api.v1.routes.admin.supabase", mock_sb), \
          patch("backend.services.interview.repository.supabase", mock_sb), \
+         patch("backend.services.interview.topic_profile.supabase", mock_sb), \
          patch("backend.services.reports.builder.supabase", mock_sb):
         # Flexible mock that handles both .eq() and non-.eq() chains
         mock_execute = MagicMock(data=[])

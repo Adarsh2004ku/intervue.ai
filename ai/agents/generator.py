@@ -4,6 +4,7 @@ import json
 import random
 import re
 from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 from ai.agents.llm import invoke_llm_text
@@ -315,6 +316,106 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     return json.loads(cleaned)
 
 
+@dataclass(frozen=True)
+class QuestionGenerationContext:
+    mode: str
+    job_role: str
+    order_idx: int
+    job_description: str = ""
+    resume_context: str = ""
+    previous_questions: tuple[str, ...] = ()
+    last_question: str | None = None
+    last_answer: str | None = None
+    last_evaluation: dict[str, Any] | None = None
+    fallback_seed: str = ""
+    topic_info: dict[str, Any] | None = None
+
+
+def _question_context(
+    *,
+    mode: str,
+    job_role: str,
+    order_idx: int,
+    job_description: str = "",
+    resume_context: str = "",
+    previous_questions: list[str] | tuple[str, ...] | None = None,
+    last_question: str | None = None,
+    last_answer: str | None = None,
+    last_evaluation: dict[str, Any] | None = None,
+    fallback_seed: str = "",
+    topic_info: dict[str, Any] | None = None,
+) -> QuestionGenerationContext:
+    return QuestionGenerationContext(
+        mode=mode,
+        job_role=job_role,
+        order_idx=order_idx,
+        job_description=job_description,
+        resume_context=resume_context,
+        previous_questions=tuple(previous_questions or ()),
+        last_question=last_question,
+        last_answer=last_answer,
+        last_evaluation=last_evaluation,
+        fallback_seed=fallback_seed,
+        topic_info=topic_info,
+    )
+
+
+def _local_question_payload(context: QuestionGenerationContext) -> dict[str, Any]:
+    previous_questions = list(context.previous_questions)
+    cleaned_job_description = clean_job_description(context.job_description)
+    topic_info = context.topic_info
+    phase_questions = _phase_questions(
+        mode=context.mode,
+        job_role=context.job_role,
+        job_description=cleaned_job_description,
+        resume_context=context.resume_context,
+        topic_info=topic_info,
+    )
+    context_questions = _context_questions(
+        context.job_role,
+        cleaned_job_description,
+        context.resume_context,
+    )
+    questions = QUESTION_BANK.get(context.mode, QUESTION_BANK["faang"])
+    selected_questions = phase_questions or context_questions or questions
+    seeded_order_idx = context.order_idx + _seed_offset(
+        context.fallback_seed,
+        len(selected_questions),
+    )
+    selected_question = _avoid_repeated_question(
+        selected_questions,
+        seeded_order_idx,
+        previous_questions,
+    )
+    is_weak_answer = (
+        int(context.last_evaluation.get("score") or 100) < 60
+        if context.last_evaluation
+        else False
+    )
+    if is_weak_answer:
+        selected_question = (
+            "Let us go one level deeper on your previous answer. "
+            f"{selected_question}"
+        )
+
+    return {
+        "text": selected_question,
+        "category": "Behavioral" if context.mode == "hr" else "Interview",
+        "topic": (topic_info or {}).get("topic") or context.job_role or "General",
+        "difficulty": "warmup" if context.order_idx == 0 else "adaptive",
+        "why_asked": (
+            "Generated from the current realistic interview stage, resume, pasted job description, selected interview mode, and job role."
+            if phase_questions
+            else
+            "Generated from the resume, pasted job description, selected interview mode, and job role."
+            if context_questions
+            else "Generated from the selected interview mode and job role."
+        ),
+        "is_weakness_focused": False,
+        "order_idx": context.order_idx,
+    }
+
+
 def question_payload(
     mode: str,
     job_role: str,
@@ -326,107 +427,45 @@ def question_payload(
     fallback_seed: str = "",
     topic_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    previous_questions = previous_questions or []
-    phase_questions = _phase_questions(
-        mode=mode,
-        job_role=job_role,
-        job_description=clean_job_description(job_description),
-        resume_context=resume_context,
-        topic_info=topic_info,
-    )
-    context_questions = _context_questions(
-        job_role,
-        clean_job_description(job_description),
-        resume_context,
-    )
-    questions = QUESTION_BANK.get(mode, QUESTION_BANK["faang"])
-    selected_questions = phase_questions or context_questions or questions
-    seeded_order_idx = order_idx + _seed_offset(fallback_seed, len(selected_questions))
-    selected_question = _avoid_repeated_question(
-        selected_questions,
-        seeded_order_idx,
-        previous_questions,
-    )
-    is_weak_answer = int(last_evaluation.get("score") or 100) < 60 if last_evaluation else False
-    if is_weak_answer:
-        selected_question = (
-            "Let us go one level deeper on your previous answer. "
-            f"{selected_question}"
+    return _local_question_payload(
+        _question_context(
+            mode=mode,
+            job_role=job_role,
+            order_idx=order_idx,
+            job_description=job_description,
+            resume_context=resume_context,
+            previous_questions=previous_questions,
+            last_evaluation=last_evaluation,
+            fallback_seed=fallback_seed,
+            topic_info=topic_info,
         )
-
-    return {
-        "text": selected_question,
-        "category": "Behavioral" if mode == "hr" else "Interview",
-        "topic": (topic_info or {}).get("topic") or job_role or "General",
-        "difficulty": "warmup" if order_idx == 0 else "adaptive",
-        "why_asked": (
-            "Generated from the current realistic interview stage, resume, pasted job description, selected interview mode, and job role."
-            if phase_questions
-            else
-            "Generated from the resume, pasted job description, selected interview mode, and job role."
-            if context_questions
-            else "Generated from the selected interview mode and job role."
-        ),
-        "is_weakness_focused": False,
-        "order_idx": order_idx,
-    }
-
-
-def _fallback_question_payload(
-    *,
-    mode: str,
-    job_role: str,
-    order_idx: int,
-    job_description: str,
-    resume_context: str,
-    previous_questions: list[str],
-    last_evaluation: dict[str, Any] | None,
-    topic_info: dict[str, Any] | None,
-    fallback_seed: str,
-) -> dict[str, Any]:
-    payload = question_payload(
-        mode,
-        job_role,
-        order_idx,
-        job_description,
-        resume_context=resume_context,
-        previous_questions=previous_questions,
-        last_evaluation=last_evaluation,
-        fallback_seed=fallback_seed,
-        topic_info=topic_info,
     )
-    if topic_info:
-        payload["category"] = topic_info.get("category") or payload["category"]
-        payload["difficulty"] = topic_info.get("difficulty") or payload["difficulty"]
-        payload["topic"] = topic_info.get("topic") or payload["topic"]
+
+
+def _fallback_question_payload(context: QuestionGenerationContext) -> dict[str, Any]:
+    payload = _local_question_payload(context)
+    if context.topic_info:
+        payload["category"] = context.topic_info.get("category") or payload["category"]
+        payload["difficulty"] = context.topic_info.get("difficulty") or payload["difficulty"]
+        payload["topic"] = context.topic_info.get("topic") or payload["topic"]
     payload["why_asked"] = f"{payload['why_asked']} Gemini was unavailable, so a local non-repeating fallback was used."
     return payload
 
 
-def _build_prompt(
-    *,
-    mode: str,
-    job_role: str,
-    job_description: str,
-    order_idx: int,
-    previous_questions: list[str],
-    last_question: str | None,
-    last_answer: str | None,
-    last_evaluation: dict[str, Any] | None,
-    resume_context: str,
-    topic_info: dict[str, Any] | None,
-) -> str:
-    persona = get_persona(mode)
-    previous = "\n".join(f"- {question}" for question in previous_questions[-8:]) or "None yet"
+def _build_prompt(context: QuestionGenerationContext) -> str:
+    persona = get_persona(context.mode)
+    previous = "\n".join(f"- {question}" for question in context.previous_questions[-8:]) or "None yet"
+    last_evaluation = context.last_evaluation
     score = last_evaluation.get("score") if last_evaluation else None
     reasoning = last_evaluation.get("reasoning") or last_evaluation.get("cot_reasoning") if last_evaluation else ""
     question_type = "follow-up" if isinstance(score, (int, float)) and score < settings.weak_score_threshold else "new topic"
-    topic = (topic_info or {}).get("topic") or job_role
-    category = (topic_info or {}).get("category") or "Role Fit"
-    difficulty = (topic_info or {}).get("difficulty") or ("warmup" if order_idx == 0 else "adaptive")
-    phase = (topic_info or {}).get("phase") or _phase_key(topic_info) or "adaptive"
-    focus = (topic_info or {}).get("focus") or ""
-    success_signal = (topic_info or {}).get("success_signal") or "clear hiring signal"
+    topic_info = context.topic_info or {}
+    topic = topic_info.get("topic") or context.job_role
+    category = topic_info.get("category") or "Role Fit"
+    difficulty = topic_info.get("difficulty") or ("warmup" if context.order_idx == 0 else "adaptive")
+    phase = topic_info.get("phase") or _phase_key(context.topic_info) or "adaptive"
+    focus = topic_info.get("focus") or ""
+    success_signal = topic_info.get("success_signal") or "clear hiring signal"
     behaviors = "\n".join(
         f"- {behavior}" for behavior in persona.get("interviewer_behaviors", [])
     ) or "- Ask realistic follow-ups based on the candidate's answer"
@@ -435,7 +474,7 @@ def _build_prompt(
         for step in persona.get("interview_flow", [])
     ) or "- Adaptive interview flow"
 
-    return f"""You are {persona['name']}, conducting a {mode} mock interview.
+    return f"""You are {persona['name']}, conducting a {context.mode} mock interview.
 
 Persona style: {persona.get('style', '')}
 Tone: {persona.get('tone', '')}
@@ -448,8 +487,8 @@ Interviewer behaviors:
 Overall interview progression:
 {flow}
 
-Job role: {job_role}
-Question number: {order_idx + 1}
+Job role: {context.job_role}
+Question number: {context.order_idx + 1}
 Current interview stage: {phase}
 Question type: {question_type}
 Target topic: {topic}
@@ -459,19 +498,19 @@ Focus: {focus}
 Success signal to test: {success_signal}
 
 Job description:
-{job_description or 'No job description provided.'}
+{context.job_description or 'No job description provided.'}
 
 Resume context:
-{resume_context or 'No resume context provided.'}
+{context.resume_context or 'No resume context provided.'}
 
 Previous questions, do not repeat or lightly rephrase these:
 {previous}
 
 Last asked question:
-{last_question or 'None'}
+{context.last_question or 'None'}
 
 Candidate's last answer transcript:
-{(last_answer or 'None')[:1800]}
+{(context.last_answer or 'None')[:1800]}
 
 Last evaluation:
 Score: {score if score is not None else 'N/A'}
@@ -498,32 +537,9 @@ Return only valid JSON:
 }}"""
 
 
-def _generate_with_gemini_sync(
-    *,
-    mode: str,
-    job_role: str,
-    job_description: str,
-    order_idx: int,
-    previous_questions: list[str],
-    last_question: str | None,
-    last_answer: str | None,
-    last_evaluation: dict[str, Any] | None,
-    resume_context: str,
-    topic_info: dict[str, Any] | None,
-) -> dict[str, Any]:
+def _generate_with_gemini_sync(context: QuestionGenerationContext) -> dict[str, Any]:
     content = invoke_llm_text(
-        _build_prompt(
-            mode=mode,
-            job_role=job_role,
-            job_description=job_description,
-            order_idx=order_idx,
-            previous_questions=previous_questions,
-            last_question=last_question,
-            last_answer=last_answer,
-            last_evaluation=last_evaluation,
-            resume_context=resume_context,
-            topic_info=topic_info,
-        ),
+        _build_prompt(context),
         temperature=0.75,
         max_tokens=450,
         request_timeout=20,
@@ -531,6 +547,7 @@ def _generate_with_gemini_sync(
     )
     question = _extract_json_object(content)
     text = str(question.get("text") or "").strip()
+    previous_questions = list(context.previous_questions)
     if not text:
         raise ValueError("Gemini returned an empty question")
     if _question_is_repeat(text, previous_questions):
@@ -538,12 +555,12 @@ def _generate_with_gemini_sync(
 
     return {
         "text": text,
-        "category": str(question.get("category") or ("Behavioral" if mode == "hr" else "Interview")),
-        "topic": str(question.get("topic") or job_role or "General"),
-        "difficulty": str(question.get("difficulty") or ("warmup" if order_idx == 0 else "adaptive")),
+        "category": str(question.get("category") or ("Behavioral" if context.mode == "hr" else "Interview")),
+        "topic": str(question.get("topic") or context.job_role or "General"),
+        "difficulty": str(question.get("difficulty") or ("warmup" if context.order_idx == 0 else "adaptive")),
         "why_asked": str(question.get("why_asked") or "Generated by Gemini from the resume, job description, and interview history."),
         "is_weakness_focused": bool(question.get("is_weakness_focused", False)),
-        "order_idx": order_idx,
+        "order_idx": context.order_idx,
     }
 
 
@@ -561,25 +578,26 @@ def generate_question_payload_sync(
     topic_info: dict[str, Any] | None = None,
     fallback_seed: str = "",
 ) -> dict[str, Any]:
-    previous_questions = previous_questions or []
+    context = _question_context(
+        mode=mode,
+        job_role=job_role,
+        order_idx=order_idx,
+        job_description=job_description,
+        resume_context=resume_context,
+        previous_questions=previous_questions,
+        last_question=last_question,
+        last_answer=last_answer,
+        last_evaluation=last_evaluation,
+        fallback_seed=fallback_seed,
+        topic_info=topic_info,
+    )
 
     try:
-        payload = _generate_with_gemini_sync(
-            mode=mode,
-            job_role=job_role,
-            job_description=job_description,
-            order_idx=order_idx,
-            previous_questions=previous_questions,
-            last_question=last_question,
-            last_answer=last_answer,
-            last_evaluation=last_evaluation,
-            resume_context=resume_context,
-            topic_info=topic_info,
-        )
+        payload = _generate_with_gemini_sync(context)
         logger.info(
             "question_generated_with_gemini",
             model=settings.primary_llm,
-            order_idx=order_idx,
+            order_idx=context.order_idx,
             topic=payload.get("topic"),
         )
         return payload
@@ -587,49 +605,16 @@ def generate_question_payload_sync(
         logger.warning(
             "gemini_question_generation_failed",
             model=settings.primary_llm,
-            order_idx=order_idx,
+            order_idx=context.order_idx,
             error=str(e),
         )
-        return _fallback_question_payload(
-            mode=mode,
-            job_role=job_role,
-            order_idx=order_idx,
-            job_description=job_description,
-            resume_context=resume_context,
-            previous_questions=previous_questions,
-            last_evaluation=last_evaluation,
-            topic_info=topic_info,
-            fallback_seed=fallback_seed,
-        )
+        return _fallback_question_payload(context)
 
 
-async def generate_question_payload(
-    *,
-    mode: str,
-    job_role: str,
-    order_idx: int,
-    job_description: str = "",
-    previous_questions: list[str] | None = None,
-    last_question: str | None = None,
-    last_answer: str | None = None,
-    last_evaluation: dict[str, Any] | None = None,
-    resume_context: str = "",
-    topic_info: dict[str, Any] | None = None,
-    fallback_seed: str = "",
-) -> dict[str, Any]:
+async def generate_question_payload(**kwargs: Any) -> dict[str, Any]:
     return await asyncio.to_thread(
         generate_question_payload_sync,
-        mode=mode,
-        job_role=job_role,
-        order_idx=order_idx,
-        job_description=job_description,
-        previous_questions=previous_questions,
-        last_question=last_question,
-        last_answer=last_answer,
-        last_evaluation=last_evaluation,
-        resume_context=resume_context,
-        topic_info=topic_info,
-        fallback_seed=fallback_seed,
+        **kwargs,
     )
 
 
