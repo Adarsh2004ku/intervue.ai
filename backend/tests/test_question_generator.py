@@ -154,6 +154,61 @@ def test_groq_fallback_is_used_when_gemini_fails(monkeypatch):
     assert payload["text"] == "Which FastAPI service best proves your backend fit?"
 
 
+def test_empty_gemini_response_uses_groq_fallback(monkeypatch):
+    class EmptyGemini:
+        def __init__(self, **kwargs):
+            pass
+
+        def invoke(self, prompt):
+            return SimpleNamespace(content="   ")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"text":"How would you debug a production incident in FastAPI?",'
+                                '"category":"Interview","topic":"Backend Engineer",'
+                                '"difficulty":"adaptive","why_asked":"Gemini returned empty content.",'
+                                '"is_weakness_focused":false}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def post(self, url, headers, json):
+            return FakeResponse()
+
+    monkeypatch.setattr(llm_provider, "_GEMINI_COOLDOWN_UNTIL", 0.0)
+    monkeypatch.setattr(llm_provider, "ChatGoogleGenerativeAI", EmptyGemini)
+    monkeypatch.setattr(llm_provider.httpx, "Client", FakeClient)
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_test_key")
+
+    payload = generator.generate_question_payload_sync(
+        mode="faang",
+        job_role="Backend Engineer",
+        order_idx=0,
+    )
+
+    assert payload["text"] == "How would you debug a production incident in FastAPI?"
+
+
 def test_gemini_rate_limit_skips_to_groq_during_cooldown(monkeypatch):
     calls = {"gemini": 0, "groq": 0}
 

@@ -163,13 +163,16 @@ def invoke_llm_text(
         )
 
     try:
-        return _invoke_gemini(
+        content = _invoke_gemini(
             prompt,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             request_timeout=request_timeout,
         )
+        if not content.strip():
+            raise RuntimeError("Gemini returned empty content")
+        return content
     except Exception as gemini_error:
         logger.warning(
             "gemini_failed_using_groq_fallback",

@@ -4,7 +4,7 @@ import time
 from ai.graph.builder import run_question_turn
 from backend.core.config import settings
 from backend.core.logging import get_logger
-from backend.services.audio.gemini_stt import transcribe_and_evaluate
+from backend.services.audio.elevenlabs_stt import transcribe_and_evaluate
 from backend.services.cost_tracking import (
     estimate_elevenlabs_stt_cost_inr,
     get_interview_cost_summary,
