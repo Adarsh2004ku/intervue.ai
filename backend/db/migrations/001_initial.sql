@@ -27,7 +27,7 @@ CREATE TABLE resumes (
     file_name TEXT,
     parsed_json JSONB,
     raw_text TEXT,
-    embedding_model TEXT DEFAULT 'text-embedding-004',
+    embedding_model TEXT DEFAULT 'gemini-embedding-001',
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

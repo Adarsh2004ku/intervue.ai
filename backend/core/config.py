@@ -138,8 +138,8 @@ class Settings(BaseSettings):
     primary_llm: str = "gemini-2.5-flash"
     """Primary LLM for interview generation"""
     
-    embedding_model: str = "text-embedding-004"
-    """Embedding model for resume parsing (updated from gemini-embedding-001)"""
+    embedding_model: str = "gemini-embedding-001"
+    """Embedding model for resume parsing."""
     
     embedding_dimension: int = 768
     """Vector dimension for embeddings"""

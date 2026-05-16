@@ -14,6 +14,7 @@ from backend.core.security import get_current_user  # <-- Import the dependency
 from backend.core.logging import get_logger
 from backend.services.cache.task_queue import queue_or_run_inline
 from backend.services.cache.tasks import embed_resume_chunks_task
+from backend.services.embeddings.embedder import get_embedding_model_name
 
 logger = get_logger("resume_routes")
 router = APIRouter()
@@ -76,6 +77,7 @@ async def upload_resume(
         "file_name": file.filename,
         "parsed_json": parsed_resume.model_dump(),
         "raw_text": raw_text[:5000],
+        "embedding_model": get_embedding_model_name(),
     }).execute()
 
     # Chunk and embed
@@ -129,12 +131,16 @@ async def upload_resume(
         "chunks_stored": stored,
         "embedding_status": embedding["status"],
         "embedding_task_id": embedding["task_id"],
-        "message": (
-            "Resume processed successfully"
-            if embedding["status"] == "completed"
-            else "Resume parsed; embeddings are queued"
-        ),
+        "message": _resume_upload_message(embedding["status"]),
     }
+
+
+def _resume_upload_message(embedding_status: str) -> str:
+    if embedding_status == "completed":
+        return "Resume processed successfully"
+    if embedding_status == "queued":
+        return "Resume parsed; embeddings are queued"
+    return "Resume parsed; embeddings could not be generated"
 
 
 @router.get("/{resume_id}")

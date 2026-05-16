@@ -128,6 +128,7 @@ cp backend/.env.example backend/.env
 Edit `backend/.env`:
 ```env
 GOOGLE_API_KEY=your_gemini_key          # Get from aistudio.google.com
+EMBEDDING_MODEL=gemini-embedding-001    # Text embedding model for resume RAG
 GROQ_API_KEY=your_groq_key              # Get from console.groq.com
 SUPABASE_URL=https://xxx.supabase.co    # From Supabase dashboard
 SUPABASE_KEY=eyJhb...                   # From Supabase dashboard (anon key)

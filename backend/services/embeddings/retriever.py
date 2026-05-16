@@ -9,7 +9,7 @@ logger = get_logger("retriever")
 
 """
 RAG retrieval pipeline:
-1. Embed the query using Gemini text-embedding-004
+1. Embed the query using the configured Gemini embedding model
 2. Search pgvector using cosine similarity
 3. Apply MMR (Maximal Marginal Relevance) reranking
 4. Return top-k non-redundant chunks
@@ -43,7 +43,7 @@ def retrieve_chunks(
     - 0.7 = balanced (default)
     """
     try:
-        query_vector = embed_text([query])[0]
+        query_vector = embed_text([query], task_type="RETRIEVAL_QUERY")[0]
     except Exception as e:
         logger.error("query_embedding_failed", error=str(e))
         return []

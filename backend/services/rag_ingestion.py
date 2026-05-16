@@ -86,7 +86,7 @@ def embed_and_store(
     )
 
     # Batch embeddings
-    vectors = embed_text(texts)
+    vectors = embed_text(texts, task_type="RETRIEVAL_DOCUMENT")
 
     rows = []
 

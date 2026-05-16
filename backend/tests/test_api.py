@@ -29,6 +29,21 @@ class TestAuthEndpoints:
         })
         assert response.status_code == 422
 
+    def test_signup_duplicate_email_returns_conflict(self, client, mock_supabase):
+        """Duplicate Supabase users should return a client error, not a 500."""
+        mock_supabase.auth.admin.create_user.side_effect = Exception(
+            "A user with this email address has already been registered"
+        )
+
+        response = client.post("/api/v1/auth/signup", json={
+            "email": "duplicate@test.com",
+            "password": "password123",
+            "full_name": "Duplicate User",
+        })
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Email already registered"
+
     def test_login_missing_fields(self, client, mock_supabase):
         """Login with missing fields should return 422."""
         response = client.post("/api/v1/auth/login", json={})

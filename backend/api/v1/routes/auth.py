@@ -82,6 +82,19 @@ def _upsert_user(auth_user, full_name: str = "", db_client=None):
     }).execute()
 
 
+def _is_duplicate_signup_error(error: Exception) -> bool:
+    """Detect Supabase duplicate-user errors across client/library versions."""
+    message = str(error).lower()
+    duplicate_markers = (
+        "already registered",
+        "already been registered",
+        "already exists",
+        "duplicate",
+        "unique constraint",
+    )
+    return any(marker in message for marker in duplicate_markers)
+
+
 # ---------------------------------------------------------------------------
 # Email / Password
 # ---------------------------------------------------------------------------
@@ -134,11 +147,15 @@ async def signup(req: SignupRequest):
     except HTTPException:
         raise
     except Exception as e:
+        if _is_duplicate_signup_error(e):
+            logger.info("signup_duplicate_email", email=req.email)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+
         logger.error("signup_exception", error=str(e))
-        message = str(e)
-        if "already registered" in message.lower() or "already exists" in message.lower():
-            raise HTTPException(status_code=400, detail="Email already registered")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {message}")
+        raise HTTPException(status_code=500, detail="Unable to create account right now")
 
 
 @router.post("/login", response_model=TokenResponse)
