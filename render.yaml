@@ -32,14 +32,6 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: intervue-ai-redis
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         sync: false
-  - type: keyvalue
-    name: intervue-ai-redis
-    plan: free
-    region: singapore
-    ipAllowList: []
