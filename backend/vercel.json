@@ -1,11 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastapi",
-  "installCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt",
-  "functions": {
-    "main.py": {
-      "includeFiles": "../ai/**",
-      "maxDuration": 60
-    }
-  }
+  "installCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt"
 }
