@@ -87,6 +87,24 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     """Redis connection URL for Celery and caching"""
 
+    redis_session_ttl_seconds: int = 86400
+    """How long interview session state stays in Redis."""
+
+    celery_enabled: bool = False
+    """Queue non-critical background work through Celery when true."""
+
+    celery_broker_url: str = ""
+    """Celery broker URL. Defaults to redis_url when empty."""
+
+    celery_result_backend: str = ""
+    """Celery result backend URL. Defaults to redis_url when empty."""
+
+    celery_task_always_eager: bool = False
+    """Run Celery tasks inline, useful for local tests and debugging."""
+
+    celery_result_expires_seconds: int = 3600
+    """How long Celery stores task results."""
+
     # =====================================================
     # JWT AUTHENTICATION
     # =====================================================

@@ -11,7 +11,7 @@ from backend.services.cost_tracking import (
     record_vision_cost,
     record_ai_cost,
 )
-from backend.services.interview.session_state import interview_sessions
+from backend.services.interview.session_state import append_session_item, get_session_frames
 from backend.services.vision.behavior import aggregate_behavior_analysis, analyze_frame
 
 
@@ -29,7 +29,7 @@ async def handle_websocket_frame(
         result=result,
         latency_ms=0,
     )
-    interview_sessions[interview_id]["frames"].append(result)
+    append_session_item(interview_id, "frames", result)
 
     await websocket.send_json({
         "type": "vision",
@@ -62,7 +62,7 @@ async def handle_websocket_text(
     elif message_type == "summary":
         await websocket.send_json({
             "type": "summary",
-            "data": aggregate_behavior_analysis(interview_sessions[interview_id]["frames"]),
+            "data": aggregate_behavior_analysis(get_session_frames(interview_id)),
             "session_cost": get_interview_cost_summary(interview_id),
         })
     else:

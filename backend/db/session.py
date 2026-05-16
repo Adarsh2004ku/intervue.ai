@@ -1,9 +1,13 @@
 from supabase import create_client,Client
 from sqlalchemy import create_engine
 from sqlalchemy.pool import QueuePool
-import redis
 from backend.core.config import settings
 from backend.core.logging import get_logger
+from backend.services.cache.redis_client import (
+    RedisClientProxy,
+    check_redis_connection,
+    get_redis_client,
+)
 
 
 logger = get_logger("db")
@@ -35,12 +39,7 @@ def get_engine():
     )
 
 # Redis Client
-
-def get_redis_client()-> redis.Redis:
-    """ Crete and return a Redis Client"""
-    return redis.from_url(settings.redis_url,decode_responses = True)
-
-redis_client : redis.Redis = get_redis_client()
+redis_client = RedisClientProxy()
 
 def check_db_connection() -> dict:
     """
@@ -52,8 +51,5 @@ def check_db_connection() -> dict:
     except Exception as e:
             status["supabase"] = f"error: {str(e)[:100]}"
 
-    try:
-        redis_client.ping()
-    except Exception as e:
-        status["redis"] = f"error: {str(e)[:100]}"
+    status["redis"] = check_redis_connection()
     return status

@@ -20,8 +20,9 @@ from backend.services.interview.repository import (
     insert_question,
 )
 from backend.services.interview.session_state import (
+    append_session_item,
     get_agent_state,
-    interview_sessions,
+    get_session_frames,
     set_agent_state,
     with_session_interview_context,
 )
@@ -51,7 +52,7 @@ async def analyze_frame_submission(
         result=result,
         latency_ms=latency_ms,
     )
-    interview_sessions[interview_id]["frames"].append(result)
+    append_session_item(interview_id, "frames", result)
 
     return {
         "success": True,
@@ -106,7 +107,7 @@ async def analyze_audio_submission(
             latency_ms=latency_ms,
         )
 
-    interview_sessions[interview_id]["audio"].append(result)
+    append_session_item(interview_id, "audio", result)
     question_row = ensure_question(
         interview_id=interview_id,
         interview=interview,
@@ -166,7 +167,7 @@ async def analyze_audio_submission(
                 },
             ],
             "speech_metrics": agent_state.get("speech_metrics", []),
-            "behavior_data": interview_sessions[interview_id]["frames"],
+            "behavior_data": get_session_frames(interview_id),
             "current_index": len(previous_questions),
             "weak_topics": agent_state.get("weak_topics", []),
             "strong_topics": agent_state.get("strong_topics", []),
@@ -205,5 +206,5 @@ def summarize_behavior_for_user(interview_id: str, user: dict) -> dict:
     get_interview_for_user(interview_id, user)
     return {
         "success": True,
-        "summary": aggregate_behavior_analysis(interview_sessions[interview_id]["frames"]),
+        "summary": aggregate_behavior_analysis(get_session_frames(interview_id)),
     }

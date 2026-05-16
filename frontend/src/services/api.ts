@@ -40,6 +40,8 @@ export type ResumeUploadResponse = {
   resume_id: string;
   parsed: ParsedResume;
   chunks_stored: number;
+  embedding_status?: 'queued' | 'completed' | 'failed';
+  embedding_task_id?: string | null;
   message: string;
 };
 
@@ -245,6 +247,8 @@ export type CompleteInterviewResponse = {
   success: boolean;
   interview_id: string;
   session_cost: CostSummary;
+  topic_score_status?: 'queued' | 'completed' | 'failed';
+  topic_score_task_id?: string | null;
 };
 
 export class ApiError extends Error {

@@ -77,12 +77,11 @@ graph TD
 intervue-ai/
 ├── backend/               # 100% Python FastAPI Backend
 │   ├── main.py            # App entry, CORS, lifespan
-│   ├── celery_app.py      # Celery config for background tasks
+│   ├── services/cache/    # Redis client, Celery app, and background tasks
 │   ├── api/v1/            # Routes (auth, resume, interview, report)
 │   ├── core/              # Config, Security (JWT), Middleware, Logging
 │   ├── db/                # Supabase client, SQLAlchemy session, Migrations
 │   ├── services/          # Business logic (RAG, Audio STT, Vision, LLM Router)
-│   ├── tasks/             # Celery tasks (LangGraph runner)
 │   └── tests/             # Pytest suite
 │
 ├── ai/                    # LangGraph Agents & AI Logic
@@ -131,9 +130,11 @@ Edit `backend/.env`:
 GOOGLE_API_KEY=your_gemini_key          # Get from aistudio.google.com
 GROQ_API_KEY=your_groq_key              # Get from console.groq.com
 SUPABASE_URL=https://xxx.supabase.co    # From Supabase dashboard
+SUPABASE_KEY=eyJhb...                   # From Supabase dashboard (anon key)
 SUPABASE_SERVICE_KEY=eyJhb...           # From Supabase dashboard (service_role key)
 JWT_SECRET=any_random_32_char_string
-REDIS_URL=redis://redis:6379/0          # Defaults to local docker redis
+REDIS_URL=redis://localhost:6379/0      # Use rediss://default:password@host:6379 for Upstash
+CELERY_ENABLED=false                    # Docker/Render set this to true when a worker is running
 ```
 
 ### 4. Run Locally with Docker (Recommended)
@@ -159,7 +160,7 @@ uvicorn main:app --reload --port 8000
 **Celery Worker (in a separate terminal):**
 ```bash
 cd backend
-celery -A backend.celery_app worker --loglevel=info
+celery -A backend.services.cache.celery_app.celery_app worker --loglevel=INFO --concurrency=2
 ```
 
 **Frontend:**
@@ -168,6 +169,9 @@ cd frontend
 npm install
 npm run dev
 ```
+
+### Render Backend + Celery
+`render.yaml` deploys the FastAPI web service and a separate Celery background worker. Set `REDIS_URL` to a Redis TCP/TLS URL such as `rediss://default:password@host:6379`; Upstash REST URL/token values are not compatible with Celery or `redis-py`. The worker uses Render's `starter` plan because Render does not offer the free instance type for background workers.
 
 ---
 

@@ -13,6 +13,8 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      - key: CELERY_ENABLED
+        value: "true"
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ORIGINS
@@ -35,3 +37,64 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+  - type: worker
+    name: intervue-ai-worker
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A backend.services.cache.celery_app.celery_app worker --loglevel=INFO --concurrency=2
+    autoDeployTrigger: commit
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CELERY_ENABLED
+        value: "true"
+      - key: GOOGLE_API_KEY
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: GOOGLE_API_KEY
+      - key: GROQ_API_KEY
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: GROQ_API_KEY
+      - key: ELEVENLABS_API_KEY
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: ELEVENLABS_API_KEY
+      - key: SUPABASE_URL
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: SUPABASE_URL
+      - key: SUPABASE_KEY
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: SUPABASE_KEY
+      - key: SUPABASE_SERVICE_KEY
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: SUPABASE_SERVICE_KEY
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: intervue-ai-backend
+          envVarKey: JWT_SECRET

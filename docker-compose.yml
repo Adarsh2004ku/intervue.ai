@@ -23,6 +23,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
       PYTHONPATH: /app
     depends_on:
       redis:
@@ -31,6 +32,25 @@ services:
       - ./backend:/app/backend
       - ./ai:/app/ai
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    container_name: intervue-worker
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
+      PYTHONPATH: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./ai:/app/ai
+    command: celery -A backend.services.cache.celery_app.celery_app worker --loglevel=INFO --concurrency=2
 
   frontend:
     container_name: intervue-frontend

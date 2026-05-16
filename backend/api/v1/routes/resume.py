@@ -12,6 +12,8 @@ from backend.services.rag_ingestion import chunk_text, embed_and_store
 from backend.db.session import supabase
 from backend.core.security import get_current_user  # <-- Import the dependency
 from backend.core.logging import get_logger
+from backend.services.cache.task_queue import queue_or_run_inline
+from backend.services.cache.tasks import embed_resume_chunks_task
 
 logger = get_logger("resume_routes")
 router = APIRouter()
@@ -91,18 +93,47 @@ async def upload_resume(
             section_tags.append("general")
 
     try:
-        stored = embed_and_store(resume_id, chunks, section_tags)
+        embedding = queue_or_run_inline(
+            task=embed_resume_chunks_task,
+            inline=lambda: embed_and_store(resume_id, chunks, section_tags),
+            args=[resume_id, chunks, section_tags],
+            description="resume embeddings",
+        )
+        task_result = embedding.get("result")
+        if isinstance(task_result, dict):
+            stored = int(task_result.get("chunks_stored") or 0)
+        elif isinstance(task_result, int):
+            stored = task_result
+        else:
+            stored = 0
     except Exception as e:
         logger.error("resume_embedding_failed", resume_id=resume_id, error=str(e))
+        embedding = {
+            "status": "failed",
+            "task_id": None,
+            "queue_error": str(e),
+        }
         stored = 0
 
-    logger.info("resume_uploaded", resume_id=resume_id, chunks_stored=stored, user_id=user_id)
+    logger.info(
+        "resume_uploaded",
+        resume_id=resume_id,
+        chunks_stored=stored,
+        embedding_status=embedding["status"],
+        user_id=user_id,
+    )
 
     return {
         "resume_id": resume_id,
         "parsed": parsed_resume.model_dump(),
         "chunks_stored": stored,
-        "message": "Resume processed successfully",
+        "embedding_status": embedding["status"],
+        "embedding_task_id": embedding["task_id"],
+        "message": (
+            "Resume processed successfully"
+            if embedding["status"] == "completed"
+            else "Resume parsed; embeddings are queued"
+        ),
     }
 
 
