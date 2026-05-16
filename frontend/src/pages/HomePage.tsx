@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
 import { Bell, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { LineTrendChart } from '../components/charts/SimpleCharts';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
+import { motion } from '../components/ui/staticMotion';
 import {
   ApiError,
   CostsResponse,
@@ -580,23 +580,7 @@ const HomePage: React.FC = () => {
         >
           <motion.div className={styles.chart} variants={itemVariants}>
             <h3>Score Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                <Line
-                  type="monotone"
-                  dataKey="score"
-                  stroke="#7C3AED"
-                  strokeWidth={3}
-                  dot={{ fill: '#7C3AED', r: 5 }}
-                  activeDot={{ r: 7 }}
-                  animationDuration={1000}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <LineTrendChart data={chartData} />
           </motion.div>
         </motion.div>}
 

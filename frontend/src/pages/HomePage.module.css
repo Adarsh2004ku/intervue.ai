@@ -1303,18 +1303,6 @@
   color: #cffafe;
 }
 
-.chart :global(.recharts-cartesian-grid line) {
-  stroke: rgba(148, 163, 184, 0.13);
-}
-
-.chart :global(.recharts-text) {
-  fill: #91a0b7;
-}
-
-.chart :global(.recharts-tooltip-wrapper) {
-  filter: drop-shadow(0 20px 35px rgba(0, 0, 0, 0.25));
-}
-
 .linkButton,
 .sectionHeader a,
 .exploreBtn {
@@ -1810,18 +1798,6 @@
   border-radius: 999px;
   background: var(--home-lavender);
   color: var(--home-primary);
-}
-
-.chart :global(.recharts-cartesian-grid line) {
-  stroke: #eeeef6;
-}
-
-.chart :global(.recharts-text) {
-  fill: var(--home-muted);
-}
-
-.chart :global(.recharts-tooltip-wrapper) {
-  filter: drop-shadow(0 20px 35px rgba(31, 31, 40, 0.12));
 }
 
 .linkButton,

@@ -4,80 +4,86 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(249, 250, 255, 0.94), rgba(245, 241, 255, 0.76) 46%, rgba(248, 249, 252, 0.96)),
+    linear-gradient(22deg, rgba(124, 58, 237, 0.12), transparent 38%),
+    linear-gradient(158deg, transparent 44%, rgba(59, 130, 246, 0.1));
 }
 
-.canvas {
+.wash,
+.lightSweep,
+.grid,
+.vignette {
   position: absolute;
   inset: 0;
-  opacity: 0.78;
+}
+
+.wash {
+  background:
+    linear-gradient(90deg, rgba(124, 58, 237, 0.12), transparent 28%, rgba(14, 165, 233, 0.08) 72%, transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 42%, rgba(255, 255, 255, 0.46));
+  opacity: 0.88;
+}
+
+.lightSweep {
+  inset: -16%;
+  background:
+    linear-gradient(105deg, transparent 20%, rgba(124, 58, 237, 0.1) 38%, transparent 56%),
+    linear-gradient(235deg, transparent 30%, rgba(14, 165, 233, 0.08) 52%, transparent 68%);
+  mix-blend-mode: multiply;
+  opacity: 0.62;
 }
 
 .grid {
-  position: absolute;
   left: -12%;
   right: -12%;
-  bottom: -28%;
+  top: auto;
+  bottom: -24%;
   height: 58%;
   background-image:
     linear-gradient(rgba(124, 58, 237, 0.12) 1px, transparent 1px),
     linear-gradient(90deg, rgba(124, 58, 237, 0.12) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent 76%);
-  opacity: 0.62;
+  opacity: 0.58;
   transform: perspective(980px) rotateX(64deg);
   transform-origin: bottom center;
 }
 
-.lightSweep {
-  position: absolute;
-  inset: -20%;
-  background:
-    linear-gradient(105deg, transparent 18%, rgba(124, 58, 237, 0.1) 36%, transparent 54%),
-    linear-gradient(235deg, transparent 30%, rgba(139, 92, 246, 0.08) 48%, transparent 66%);
-  mix-blend-mode: multiply;
-  opacity: 0.72;
-  animation: sweep 14s ease-in-out infinite alternate;
-}
-
 .vignette {
-  position: absolute;
-  inset: 0;
   background:
-    linear-gradient(180deg, rgba(248, 249, 252, 0.08), rgba(248, 249, 252, 0.62)),
-    radial-gradient(circle at 50% 44%, transparent 0, rgba(243, 240, 255, 0.24) 56%, rgba(248, 249, 252, 0.72) 100%);
+    linear-gradient(180deg, rgba(248, 249, 252, 0.04), rgba(248, 249, 252, 0.62)),
+    linear-gradient(90deg, rgba(248, 249, 252, 0.62), transparent 22%, transparent 78%, rgba(248, 249, 252, 0.58));
 }
 
-.ambient .canvas {
-  opacity: 0.42;
+.ambient {
+  background:
+    linear-gradient(135deg, rgba(249, 250, 255, 0.96), rgba(247, 244, 255, 0.7) 48%, rgba(248, 249, 252, 0.98)),
+    linear-gradient(22deg, rgba(124, 58, 237, 0.08), transparent 36%),
+    linear-gradient(158deg, transparent 50%, rgba(14, 165, 233, 0.08));
+}
+
+.ambient .wash {
+  opacity: 0.48;
 }
 
 .ambient .grid {
   height: 44%;
-  opacity: 0.36;
+  opacity: 0.32;
 }
 
 .ambient .lightSweep {
-  opacity: 0.36;
-}
-
-@keyframes sweep {
-  from {
-    transform: translate3d(-4%, -2%, 0) rotate(0deg);
-  }
-
-  to {
-    transform: translate3d(4%, 3%, 0) rotate(5deg);
-  }
+  opacity: 0.32;
 }
 
 @media (max-width: 760px) {
-  .canvas {
-    opacity: 0.48;
-  }
-
   .grid {
     height: 42%;
     background-size: 32px 32px;
-    opacity: 0.38;
+    opacity: 0.34;
+  }
+
+  .lightSweep {
+    opacity: 0.42;
   }
 }

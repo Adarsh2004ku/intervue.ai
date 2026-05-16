@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import { Circle, Clock, Mic, PhoneOff, Settings, Video, Volume2 } from 'lucide-react';
-import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { RadarScoreChart } from '../components/charts/SimpleCharts';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
+import { motion } from '../components/ui/staticMotion';
 import {
   ApiError,
   AudioEvaluation,
@@ -953,7 +953,7 @@ const InterviewPage: React.FC = () => {
 
             <motion.div className={styles.analyticsTopGrid} variants={containerVariants}>
               <motion.div className={styles.analyticsGrid} variants={containerVariants}>
-                {analyticsMetrics.map((item, index) => (
+                {analyticsMetrics.map((item) => (
                   <motion.div
                     key={item.label}
                     className={styles.metricWidget}
@@ -971,9 +971,7 @@ const InterviewPage: React.FC = () => {
                     </div>
                     <div className={styles.metricProgress}>
                       <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${item.score}%` }}
-                        transition={{ duration: 0.75, delay: index * 0.05 }}
+                        style={{ width: `${item.score}%` }}
                       />
                     </div>
                   </motion.div>
@@ -982,7 +980,7 @@ const InterviewPage: React.FC = () => {
                   { label: 'Stopwords', value: speechMetrics.stopwordCount, hint: 'Speech discipline', suffix: '' },
                   { label: 'Words/min', value: speechMetrics.wordsPerMinute, hint: 'Speaking pace', suffix: 'wpm' },
                   { label: 'Word count', value: speechMetrics.wordCount, hint: 'Answer length', suffix: 'words' },
-                ].map((item, index) => (
+                ].map((item) => (
                   <motion.div
                     key={item.label}
                     className={`${styles.metricWidget} ${styles.speechMetricWidget}`}
@@ -1000,9 +998,7 @@ const InterviewPage: React.FC = () => {
                     </div>
                     <div className={styles.metricProgress}>
                       <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(100, Math.max(0, item.value))}%` }}
-                        transition={{ duration: 0.75, delay: (analyticsMetrics.length + index) * 0.05 }}
+                        style={{ width: `${Math.min(100, Math.max(0, item.value))}%` }}
                       />
                     </div>
                   </motion.div>
@@ -1014,22 +1010,7 @@ const InterviewPage: React.FC = () => {
                   <h3>Skill radar</h3>
                   <span>Realtime shape</span>
                 </div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <RadarChart data={analyticsMetrics}>
-                    <PolarGrid stroke="#E9EAF3" />
-                    <PolarAngleAxis dataKey="label" tick={{ fill: '#70707B', fontSize: 10 }} />
-                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
-                    <Radar
-                      name="Score"
-                      dataKey="score"
-                      stroke="#7C3AED"
-                      fill="#8B5CF6"
-                      fillOpacity={0.28}
-                      strokeWidth={2}
-                      isAnimationActive
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
+                <RadarScoreChart data={analyticsMetrics} />
               </motion.div>
             </motion.div>
 

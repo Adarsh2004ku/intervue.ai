@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { ArrowRight, BarChart3, Zap, Brain, TrendingUp } from 'lucide-react';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
+import { motion } from '../components/ui/staticMotion';
 import { api } from '../services/api';
 import styles from './LandingPage.module.css';
 

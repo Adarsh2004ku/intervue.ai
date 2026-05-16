@@ -154,23 +154,14 @@
 
 .talking span {
   width: 4px;
+  height: 20px;
   background: linear-gradient(180deg, #6366f1, #8b5cf6);
   border-radius: 2px;
-  animation: audioWave 0.6s ease-in-out infinite;
 }
 
-.talking span:nth-child(1) { animation-delay: 0s; }
-.talking span:nth-child(2) { animation-delay: 0.1s; }
-.talking span:nth-child(3) { animation-delay: 0.2s; }
-
-@keyframes audioWave {
-  0%, 100% {
-    height: 10px;
-  }
-  50% {
-    height: 30px;
-  }
-}
+.talking span:nth-child(1) { height: 10px; }
+.talking span:nth-child(2) { height: 30px; }
+.talking span:nth-child(3) { height: 18px; }
 
 .statusBadge {
   position: absolute;
@@ -265,22 +256,6 @@
   height: 6px;
   background: #6366f1;
   border-radius: 50%;
-  animation: bounce 1.4s infinite;
-}
-
-.thinking span:nth-child(1) { animation-delay: 0s; }
-.thinking span:nth-child(2) { animation-delay: 0.2s; }
-.thinking span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes bounce {
-  0%, 80%, 100% {
-    opacity: 0.5;
-    transform: translateY(0);
-  }
-  40% {
-    opacity: 1;
-    transform: translateY(-10px);
-  }
 }
 
 .aiStatus p {
@@ -1505,7 +1480,6 @@
     radial-gradient(circle at 20% 20%, rgba(236, 72, 153, 0.2), transparent 32%),
     radial-gradient(circle at 82% 15%, rgba(124, 58, 237, 0.24), transparent 28%);
   opacity: 0.62;
-  animation: cameraAura 10s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
@@ -1695,7 +1669,6 @@
   width: 0.2rem;
   border-radius: 999px;
   background: #f0abfc;
-  animation: cameraWave 0.72s ease-in-out infinite;
 }
 
 .pipWave span:nth-child(1) {
@@ -1704,12 +1677,10 @@
 
 .pipWave span:nth-child(2) {
   height: 1rem;
-  animation-delay: 0.1s;
 }
 
 .pipWave span:nth-child(3) {
   height: 0.75rem;
-  animation-delay: 0.2s;
 }
 
 .cameraAiPulse {
@@ -1722,7 +1693,6 @@
   border-radius: 999px;
   background: rgba(236, 72, 153, 0.16);
   filter: blur(12px);
-  animation: aiPulse 2.2s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -1806,7 +1776,6 @@
   border-radius: 999px;
   background: linear-gradient(180deg, #ec4899, #7c3aed);
   opacity: 0.82;
-  animation: cameraWave 0.85s ease-in-out infinite;
 }
 
 .cameraOffState {
@@ -1904,37 +1873,6 @@
   background: linear-gradient(135deg, rgba(248, 113, 113, 0.94), rgba(225, 29, 72, 0.9));
   color: white;
   box-shadow: 0 12px 34px rgba(225, 29, 72, 0.28);
-}
-
-@keyframes cameraAura {
-  from {
-    transform: translate3d(-2%, -1%, 0) rotate(0deg);
-  }
-  to {
-    transform: translate3d(2%, 1%, 0) rotate(8deg);
-  }
-}
-
-@keyframes aiPulse {
-  0%,
-  100% {
-    opacity: 0.34;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 0.78;
-    transform: scale(1.08);
-  }
-}
-
-@keyframes cameraWave {
-  0%,
-  100% {
-    transform: scaleY(0.45);
-  }
-  50% {
-    transform: scaleY(1.35);
-  }
 }
 
 @media (max-width: 1120px) {
@@ -3098,7 +3036,6 @@
   border-radius: 999px;
   background: var(--vp-primary);
   box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.1);
-  animation: metricPulse 1.8s ease-in-out infinite;
 }
 
 .aiWarningCard {
@@ -3358,19 +3295,6 @@
   border: 1px solid var(--vp-border);
   border-radius: 18px;
   background: #ffffff;
-}
-
-@keyframes metricPulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(0.92);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.1);
-  }
 }
 
 @media (max-width: 1180px) {

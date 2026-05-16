@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Loader } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
+import { motion } from '../components/ui/staticMotion';
 import { ApiError, api, tokenStore } from '../services/api';
 import styles from './LoginPage.module.css';
 

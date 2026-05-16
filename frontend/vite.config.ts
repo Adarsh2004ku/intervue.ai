@@ -38,8 +38,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor': ['react', 'react-dom', 'react-router-dom'],
-          'animations': ['framer-motion'],
-          'charts': ['recharts'],
         },
       },
     },
@@ -49,8 +47,6 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router-dom',
-      'framer-motion',
-      'recharts',
       'axios',
       'zustand',
     ],
