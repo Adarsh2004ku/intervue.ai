@@ -12,8 +12,11 @@ class TestInterviewState:
         """InterviewState should have all required fields."""
         state = InterviewState(
             user_id="test-user",
+            interview_id="test-interview",
             resume_id="test-resume",
             job_role="Software Engineer",
+            job_description="Build backend APIs and distributed services.",
+            resume_summary={"skills": ["Python"], "projects": ["API platform"]},
             difficulty="medium",
             interview_plan=[],
             questions=[],
@@ -44,8 +47,11 @@ class TestPlannerAgent:
         import os
         state = InterviewState(
             user_id="test-user",
+            interview_id="test-interview",
             resume_id="test-resume",
             job_role="Software Engineer at Google",
+            job_description="Design scalable services and debug production systems.",
+            resume_summary={"skills": ["Python"], "projects": ["Distributed API"]},
             difficulty="",
             interview_plan=[],
             questions=[],

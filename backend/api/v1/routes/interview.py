@@ -1,62 +1,61 @@
-import json
-import time
+import asyncio
 import uuid
-from collections import defaultdict
-from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
     Depends,
-    WebSocket,
-    WebSocketDisconnect,
-    UploadFile,
     File,
     Form,
     HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
 )
 from pydantic import BaseModel
 
-from backend.core.config import settings
-from backend.core.logging import (
-    get_logger,
-)
+from ai.agents.generator import clean_job_description
+from ai.graph.builder import run_question_turn
+from ai.personas.interviewer_personas import get_persona
+from backend.core.logging import get_logger
 from backend.core.security import get_current_user
-from backend.db.session import supabase
-from backend.services.cost_tracking import (
-    estimate_elevenlabs_stt_cost_inr,
-    estimate_elevenlabs_tts_cost_inr,
-    estimate_gemini_cost_inr,
-    get_interview_cost_summary,
-    record_ai_cost,
+from backend.services.interview.analysis import (
+    analyze_audio_submission,
+    analyze_frame_submission,
+    summarize_behavior_for_user,
+)
+from backend.services.interview.completion import complete_interview_for_user
+from backend.services.interview.repository import (
+    create_interview_record,
+    fetch_resume_for_user,
+    fetch_questions_for_interview,
+    get_interview_for_user,
+    insert_question,
+    list_interviews_for_user,
+)
+from backend.services.interview.realtime import (
+    handle_websocket_frame,
+    handle_websocket_text,
+)
+from backend.services.interview.session_state import (
+    reset_interview_session,
+    with_session_interview_context,
 )
 
-from backend.services.audio.gemini_stt import (
-    transcribe_and_evaluate,
-)
-from backend.services.audio.elevenlabs_tts import (
-    synthesize_interviewer_speech,
-)
 
-from backend.services.vision.behavior import (
-    analyze_frame,
-    aggregate_behavior_analysis,
-)
-
-
-logger = get_logger(
-    "interview_routes"
-)
-
+logger = get_logger("interview_routes")
 
 router = APIRouter(
     prefix="/interview",
-    tags=["Interview"]
+    tags=["Interview"],
 )
+
+VALID_INTERVIEW_MODES = {"faang", "startup", "hr"}
 
 
 class StartInterviewRequest(BaseModel):
     resume_id: str | None = None
     job_role: str = "General"
+    job_description: str = ""
     interview_mode: str = "faang"
 
 
@@ -65,81 +64,35 @@ class CompleteInterviewRequest(BaseModel):
     behavior_summary: dict | None = None
 
 
-interview_sessions = defaultdict(
-    lambda: {
-        "frames": [],
-        "audio": [],
-    }
-)
-
-
-def _record_vision_cost(
-    interview_id: str,
-    result: dict,
-    latency_ms: int,
-) -> dict | None:
-    usage = result.pop("_usage", None)
-    if not usage:
-        return None
-
-    tokens_in = int(usage.get("tokens_in") or 0)
-    tokens_out = int(usage.get("tokens_out") or 0)
-    model = usage.get("model") or "gemini-2.5-flash"
-    cost_inr = estimate_gemini_cost_inr(
-        model=model,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        input_modality="text_image_video",
-    )
-
-    return record_ai_cost(
-        interview_id=interview_id,
-        model=model,
-        call_type="vision_frame",
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost_inr=cost_inr,
-        latency_ms=latency_ms,
-    )
-
-
 @router.post("/start")
 async def start_interview(
     req: StartInterviewRequest,
     user: dict = Depends(get_current_user),
 ):
-
-    interview_id = str(
-        uuid.uuid4()
-    )
-
-    if req.interview_mode not in {"faang", "startup", "hr"}:
+    if req.interview_mode not in VALID_INTERVIEW_MODES:
         raise HTTPException(status_code=400, detail="Invalid interview mode")
 
-    if req.resume_id:
-        resume = (
-            supabase.table("resumes")
-            .select("id")
-            .eq("id", req.resume_id)
-            .eq("user_id", user["sub"])
-            .execute()
-        )
-        if not resume.data:
-            raise HTTPException(status_code=404, detail="Resume not found")
+    interview_id = str(uuid.uuid4())
+    job_role = req.job_role.strip() or "General"
+    job_description = clean_job_description(req.job_description)
+    resume = None
 
     try:
-        created = (
-            supabase.table("interviews")
-            .insert({
-                "id": interview_id,
-                "user_id": user["sub"],
-                "resume_id": req.resume_id,
-                "job_role": req.job_role.strip() or "General",
-                "interview_mode": req.interview_mode,
-                "status": "in_progress",
-            })
-            .execute()
+        if req.resume_id:
+            resume = fetch_resume_for_user(req.resume_id, user)
+            if not resume:
+                raise HTTPException(status_code=404, detail="Resume not found")
+
+        created_interview = create_interview_record(
+            interview_id=interview_id,
+            user_id=user["sub"],
+            resume_id=req.resume_id,
+            job_role=job_role,
+            job_description=job_description,
+            interview_mode=req.interview_mode,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(
             "interview_create_failed",
@@ -148,75 +101,104 @@ async def start_interview(
         )
         raise HTTPException(status_code=500, detail="Unable to create interview")
 
-    interview_sessions[
-        interview_id
-    ] = {
-        "frames": [],
-        "audio": [],
+    parsed_resume = (resume or {}).get("parsed_json") or {}
+    if not isinstance(parsed_resume, dict):
+        parsed_resume = {"summary": str(parsed_resume)}
+
+    agent_state = {
+        "user_id": user["sub"],
+        "interview_id": interview_id,
+        "resume_id": req.resume_id or "",
+        "job_role": created_interview["job_role"],
+        "job_description": created_interview["job_description"],
+        "resume_summary": parsed_resume,
+        "difficulty": "",
+        "interview_plan": [],
+        "questions": [],
+        "answers": [],
+        "evaluations": [],
+        "speech_metrics": [],
+        "behavior_data": [],
+        "current_index": 0,
+        "weak_topics": [],
+        "strong_topics": [],
+        "session_topic_scores": {},
+        "interview_mode": req.interview_mode,
+        "difficulty_profile": "beginner",
+        "retrieved_chunks": [],
+        "report": None,
     }
+    agent_state = await asyncio.to_thread(
+        run_question_turn,
+        agent_state,
+        include_planner=True,
+    )
+    first_question_payload = agent_state["questions"][-1]
+
+    reset_interview_session(
+        interview_id,
+        job_description=created_interview["job_description"],
+        job_role=created_interview["job_role"],
+        interview_mode=req.interview_mode,
+        agent_state=agent_state,
+    )
+
+    first_question = insert_question(
+        interview_id,
+        first_question_payload,
+    )
+    persona = get_persona(req.interview_mode)
 
     return {
         "success": True,
         "interview_id": interview_id,
-        "created_at": (
-            created.data[0].get("created_at")
-            if created.data
-            else datetime.now(timezone.utc).isoformat()
-        ),
+        "first_question": first_question,
+        "persona_name": persona.get("name"),
+        "opening_line": persona.get("opening_line"),
+        "job_role": created_interview["job_role"],
+        "job_description": created_interview["job_description"],
+        "interview_mode": req.interview_mode,
+        "resume_id": req.resume_id,
+        "created_at": created_interview["created_at"],
     }
 
 
 @router.get("/health")
 async def health_check():
-
     return {
         "status": "ok",
         "service": "interview",
     }
 
 
+@router.get("")
+@router.get("/")
+async def list_interviews(user: dict = Depends(get_current_user)):
+    """List interview sessions owned by the current user."""
+    return {"interviews": list_interviews_for_user(user)}
+
+
 @router.post("/analyze-frame")
 async def analyze_webcam_frame(
-
     interview_id: str = Form(...),
-
     file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
 ):
-
     try:
-        started_at = time.perf_counter()
-
         frame_bytes = await file.read()
-
-        result = await analyze_frame(
+        return await analyze_frame_submission(
+            interview_id=interview_id,
+            user=user,
             frame_bytes=frame_bytes,
             mime_type=file.content_type or "image/jpeg",
         )
-        latency_ms = round((time.perf_counter() - started_at) * 1000)
-        cost_record = _record_vision_cost(
-            interview_id=interview_id,
-            result=result,
-            latency_ms=latency_ms,
-        )
-
-        interview_sessions[
-            interview_id
-        ]["frames"].append(result)
-
-        return {
-            "success": True,
-            "analysis": result,
-            "cost": cost_record,
-            "session_cost": get_interview_cost_summary(interview_id),
-        }
-
+    except HTTPException:
+        raise
     except Exception as e:
-
         logger.exception(
             "frame_analysis_failed",
             error=str(e),
         )
-
         return {
             "success": False,
             "error": str(e),
@@ -225,57 +207,31 @@ async def analyze_webcam_frame(
 
 @router.post("/analyze-audio")
 async def analyze_audio_answer(
-
     interview_id: str = Form(...),
-
     question: str = Form(...),
-
+    question_id: str | None = Form(None),
     duration_sec: float | None = Form(None),
-
     file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
 ):
-
     try:
-        started_at = time.perf_counter()
-
         audio_bytes = await file.read()
-
-        result = await transcribe_and_evaluate(
-            audio_bytes=audio_bytes,
+        return await analyze_audio_submission(
+            interview_id=interview_id,
+            user=user,
             question=question,
+            question_id=question_id,
+            duration_sec=duration_sec,
+            audio_bytes=audio_bytes,
             mime_type=file.content_type or "audio/webm",
         )
-        latency_ms = round((time.perf_counter() - started_at) * 1000)
-        is_billable = bool(result.pop("_billable", False))
-        cost_record = None
-
-        if is_billable:
-            cost_record = record_ai_cost(
-                interview_id=interview_id,
-                model=result.get("model") or settings.elevenlabs_stt_model,
-                call_type="speech_to_text",
-                cost_inr=estimate_elevenlabs_stt_cost_inr(duration_sec),
-                latency_ms=latency_ms,
-            )
-
-        interview_sessions[
-            interview_id
-        ]["audio"].append(result)
-
-        return {
-            "success": True,
-            "evaluation": result,
-            "cost": cost_record,
-            "session_cost": get_interview_cost_summary(interview_id),
-        }
-
+    except HTTPException:
+        raise
     except Exception as e:
-
         logger.exception(
             "audio_analysis_failed",
             error=str(e),
         )
-
         return {
             "success": False,
             "error": str(e),
@@ -284,180 +240,67 @@ async def analyze_audio_answer(
 
 @router.get("/behavior-summary/{interview_id}")
 async def get_behavior_summary(
-    interview_id: str
+    interview_id: str,
+    user: dict = Depends(get_current_user),
 ):
-
     try:
-
-        frames = interview_sessions[
-            interview_id
-        ]["frames"]
-
-        summary = (
-            aggregate_behavior_analysis(
-                frames
-            )
-        )
-
-        return {
-            "success": True,
-            "summary": summary,
-        }
-
+        return summarize_behavior_for_user(interview_id, user)
+    except HTTPException:
+        raise
     except Exception as e:
-
         logger.exception(
             "behavior_summary_failed",
             error=str(e),
         )
-
         return {
             "success": False,
             "error": str(e),
         }
 
 
+@router.get("/{interview_id}")
+async def get_interview_status(
+    interview_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Fetch an interview and its saved questions from Supabase."""
+    interview = with_session_interview_context(
+        interview_id,
+        get_interview_for_user(interview_id, user),
+    )
+    return {
+        "interview": interview,
+        "questions": fetch_questions_for_interview(interview_id),
+    }
+
+
 @router.websocket("/ws/interview/{interview_id}")
 async def realtime_interview_socket(
-
     websocket: WebSocket,
-
     interview_id: str,
 ):
-
     await websocket.accept()
-
     logger.info(
         "websocket_connected",
         interview_id=interview_id,
     )
 
     try:
-
         while True:
-
             data = await websocket.receive()
 
             if data.get("bytes") is not None:
+                await handle_websocket_frame(websocket, interview_id, data["bytes"])
+                continue
 
-                frame_bytes = data["bytes"]
-
-                result = await analyze_frame(
-                    frame_bytes=frame_bytes,
-                    mime_type="image/jpeg",
-                )
-                cost_record = _record_vision_cost(
-                    interview_id=interview_id,
-                    result=result,
-                    latency_ms=0,
-                )
-
-                interview_sessions[
-                    interview_id
-                ]["frames"].append(result)
-
-                await websocket.send_json({
-
-                    "type": "vision",
-
-                    "data": result,
-
-                    "cost": cost_record,
-
-                    "session_cost": get_interview_cost_summary(interview_id),
-                })
-
-            elif data.get("text") is not None:
-
-                try:
-                    payload = json.loads(
-                        data["text"]
-                    )
-                except json.JSONDecodeError:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Invalid WebSocket JSON payload",
-                    })
-                    continue
-
-                message_type = payload.get(
-                    "type"
-                )
-
-                if message_type == "ping":
-
-                    await websocket.send_json({
-                        "type": "pong"
-                    })
-
-                elif message_type == "speak":
-
-                    speech_text = str(payload.get("text") or "")
-                    started_at = time.perf_counter()
-
-                    speech = await synthesize_interviewer_speech(
-                        text=speech_text,
-                        voice_id=payload.get("voice_id"),
-                    )
-                    latency_ms = round((time.perf_counter() - started_at) * 1000)
-                    speech["request_id"] = payload.get("request_id")
-                    speech["text"] = speech_text
-
-                    if speech.get("success"):
-                        speech["cost"] = record_ai_cost(
-                            interview_id=interview_id,
-                            model=speech.get("model") or settings.elevenlabs_tts_model,
-                            call_type="text_to_speech",
-                            cost_inr=estimate_elevenlabs_tts_cost_inr(
-                                model=speech.get("model") or settings.elevenlabs_tts_model,
-                                text=speech_text,
-                            ),
-                            latency_ms=latency_ms,
-                        )
-                        speech["session_cost"] = get_interview_cost_summary(interview_id)
-
-                    await websocket.send_json({
-
-                        "type": "audio",
-
-                        "data": speech,
-                    })
-
-                elif message_type == "summary":
-
-                    summary = (
-                        aggregate_behavior_analysis(
-                            interview_sessions[
-                                interview_id
-                            ]["frames"]
-                        )
-                    )
-
-                    await websocket.send_json({
-
-                        "type": "summary",
-
-                        "data": summary,
-
-                        "session_cost": get_interview_cost_summary(interview_id),
-                    })
-
-                else:
-
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Unsupported WebSocket message type: {message_type}",
-                    })
-
+            if data.get("text") is not None:
+                await handle_websocket_text(websocket, interview_id, data["text"])
     except WebSocketDisconnect:
-
         logger.info(
             "websocket_disconnected",
             interview_id=interview_id,
         )
-
     except Exception as e:
-
         logger.exception(
             "websocket_failed",
             error=str(e),
@@ -470,32 +313,15 @@ async def complete_interview(
     req: CompleteInterviewRequest,
     user: dict = Depends(get_current_user),
 ):
-    interview = (
-        supabase.table("interviews")
-        .select("id")
-        .eq("id", interview_id)
-        .eq("user_id", user["sub"])
-        .execute()
-    )
-
-    if not interview.data:
-        raise HTTPException(status_code=404, detail="Interview not found")
-
-    summary = get_interview_cost_summary(interview_id)
-    update_data = {
-        "status": "completed",
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "total_tokens": summary["total_tokens"],
-    }
-
-    if req.overall_score is not None:
-        update_data["overall_score"] = max(0, min(100, req.overall_score))
-
-    if req.behavior_summary is not None:
-        update_data["behavior_notes"] = [req.behavior_summary]
-
     try:
-        supabase.table("interviews").update(update_data).eq("id", interview_id).execute()
+        return complete_interview_for_user(
+            interview_id=interview_id,
+            user=user,
+            overall_score=req.overall_score,
+            behavior_summary=req.behavior_summary,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(
             "interview_complete_failed",
@@ -503,9 +329,3 @@ async def complete_interview(
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Unable to complete interview")
-
-    return {
-        "success": True,
-        "interview_id": interview_id,
-        "session_cost": summary,
-    }

@@ -386,8 +386,15 @@
   border: 1px solid #e2e8f0;
 }
 
+.interviewForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .launchCard select,
-.launchCard input {
+.launchCard input,
+.launchCard textarea {
   width: 100%;
   border: 2px solid #e2e8f0;
   border-radius: 10px;
@@ -400,9 +407,16 @@
 }
 
 .launchCard select:focus,
-.launchCard input:focus {
+.launchCard input:focus,
+.launchCard textarea:focus {
   border-color: #6366f1;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.jobDescriptionInput {
+  min-height: 128px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .uploadButton {

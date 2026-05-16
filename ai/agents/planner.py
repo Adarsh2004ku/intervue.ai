@@ -1,7 +1,7 @@
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.core.config import settings
 from backend.db.session import supabase
+from ai.agents.llm import invoke_llm_text
 from ai.personas.interviewer_personas import get_persona
 from ai.agents.state import InterviewState
 from backend.core.logging import get_logger
@@ -66,6 +66,7 @@ def planner_agent(state: InterviewState) -> dict:
     """
     user_id = state.get("user_id", "")
     job_role = state.get("job_role", "")
+    job_description = state.get("job_description", "")
     interview_mode = state.get("interview_mode", "faang")
     resume_summary = state.get("resume_summary", {})
 
@@ -76,11 +77,9 @@ def planner_agent(state: InterviewState) -> dict:
 
     persona = get_persona(interview_mode)
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.2)
-
-
     prompt = f"""You are an interview planner for {persona['name']}.
     Job Role: {job_role}
+    Job Description: {job_description[:3000] if job_description else 'Not provided'}
     Interview Mode: {interview_mode} ({persona['style']})
     Candidate's Weak Topics: {weak_topics if weak_topics else 'None detected yet'}
     Candidate's Strong Topics: {strong_topics if strong_topics else 'None detected yet'}
@@ -105,8 +104,12 @@ def planner_agent(state: InterviewState) -> dict:
     }}"""
 
     try:
-        response = llm.invoke(prompt)
-        content = response.content.strip()
+        content = invoke_llm_text(
+            prompt,
+            temperature=0.2,
+            request_timeout=20,
+            purpose="interview_planning",
+        ).strip()
         if content.startswith("```"):
             parts = content.split("```")
             if len(parts) >= 2:

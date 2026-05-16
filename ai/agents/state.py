@@ -8,8 +8,11 @@ All agents read from and write to this single state object.
 class InterviewState(TypedDict):
     # --- Identity ---
     user_id: str                      # Candidate's Supabase user ID
+    interview_id: str                 # Current interview session ID
     resume_id: str                    # Which resume to use for retrieval
     job_role: str                     # e.g., "Software Engineer at Google"
+    job_description: str              # Pasted role description and requirements
+    resume_summary: Dict[str, Any]    # Parsed resume JSON used for planner/generator context
 
     # --- Planner output ---
     difficulty: str                   # 'easy', 'medium', or 'hard'

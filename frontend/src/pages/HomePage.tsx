@@ -48,6 +48,7 @@ const HomePage: React.FC = () => {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
+  const [jobDescription, setJobDescription] = useState('');
   const [interviewMode, setInterviewMode] = useState<InterviewMode>('faang');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -67,9 +68,10 @@ const HomePage: React.FC = () => {
         setLoading(true);
         const localInterviews = interviewHistoryStore().list();
         const me = await api.auth.me();
-        const [adminResult, resumeResult, costsResult, metricsResult] = await Promise.allSettled([
+        const [adminResult, resumeResult, interviewResult, costsResult, metricsResult] = await Promise.allSettled([
           api.admin.dashboard(),
           api.resume.list(),
+          api.interview.list(),
           api.admin.costs(7),
           api.admin.metrics(),
           api.interview.health(),
@@ -87,13 +89,16 @@ const HomePage: React.FC = () => {
         const resumeData = resumeResult.status === 'fulfilled'
           ? resumeResult.value
           : { resumes: [] };
+        const recentInterviews = interviewResult.status === 'fulfilled'
+          ? interviewResult.value.interviews
+          : localInterviews;
         const costsData = costsResult.status === 'fulfilled'
           ? costsResult.value
           : null;
         const metricsData = metricsResult.status === 'fulfilled'
           ? metricsResult.value
           : null;
-        const dashboardData = normalizeDashboard(adminData, resumeData.resumes, localInterviews);
+        const dashboardData = normalizeDashboard(adminData, resumeData.resumes, recentInterviews);
 
         setProfile(me);
         setDashboard(dashboardData);
@@ -104,6 +109,7 @@ const HomePage: React.FC = () => {
         if (
           adminResult.status === 'rejected'
           || resumeResult.status === 'rejected'
+          || interviewResult.status === 'rejected'
           || costsResult.status === 'rejected'
           || metricsResult.status === 'rejected'
         ) {
@@ -164,8 +170,8 @@ const HomePage: React.FC = () => {
     {
       label: 'API Health',
       value: metrics?.status || 'Checking',
-      status: metrics?.redis_connected ? `Redis ${metrics.redis_memory || 'connected'}` : 'Redis unavailable',
-      trend: metrics?.redis_error || 'Backend metrics route connected',
+      status: metrics?.supabase_connected ? 'Database connected' : 'Database unavailable',
+      trend: metrics?.redis_connected ? `Redis ${metrics.redis_memory || 'connected'}` : metrics?.redis_error || 'Redis unavailable',
       color: '#0891b2',
     },
   ], [costs, dashboard, metrics]);
@@ -253,12 +259,13 @@ const HomePage: React.FC = () => {
       setStarting(true);
       setError('');
       setStatus('Starting interview session...');
-      const started = await api.interview.start(selectedResumeId, jobRole, interviewMode);
+      const started = await api.interview.start(selectedResumeId, jobRole, interviewMode, jobDescription);
       activeInterviewStore().set(started);
       interviewHistoryStore().upsert({
         id: started.interview_id,
         resume_id: started.resume_id,
         job_role: started.job_role,
+        job_description: started.job_description || jobDescription,
         interview_mode: started.interview_mode,
         status: 'in_progress',
         overall_score: null,
@@ -487,10 +494,17 @@ const HomePage: React.FC = () => {
             </select>
           </motion.div>
 
-          <motion.form className={styles.launchCard} variants={itemVariants} onSubmit={handleStartInterview}>
+          <motion.form className={`${styles.launchCard} ${styles.interviewForm}`} variants={itemVariants} onSubmit={handleStartInterview}>
             <div className={styles.sectionHeader}>
               <h3>Start Interview</h3>
             </div>
+            <textarea
+              className={styles.jobDescriptionInput}
+              value={jobDescription}
+              onChange={(event) => setJobDescription(event.target.value)}
+              placeholder="Paste the job description, responsibilities, and requirements"
+              rows={5}
+            />
             <div className={styles.formRow}>
               <input value={jobRole} onChange={(event) => setJobRole(event.target.value)} placeholder="Job role" />
               <select value={interviewMode} onChange={(event) => setInterviewMode(event.target.value as InterviewMode)}>
@@ -631,7 +645,12 @@ const HomePage: React.FC = () => {
                   </div>
                   <div className={styles.interviewDetails}>
                     <h4>{interview.job_role}</h4>
-                    <p>{formatDate(interview.completed_at || interview.created_at)} · {interview.status}</p>
+                    <p>
+                      {formatDate(interview.completed_at || interview.created_at)}
+                      {' · '}
+                      {interview.status}
+                      {interview.job_description ? ' · JD tailored' : ''}
+                    </p>
                   </div>
                 </div>
                 <div className={styles.interviewScore}>

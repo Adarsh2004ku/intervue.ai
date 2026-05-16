@@ -31,15 +31,22 @@ def retriever_agent(state: InterviewState) -> dict:
         query = last_q.get("text", "")
         section_filter = last_q.get("category", None)
     else:
-        query = state.get("job_role", "")
+        query = f"{state.get('job_role', '')} {state.get('job_description', '')}".strip()
         section_filter = None
 
-    chunks = retrieve_chunks(
-        resume_id=resume_id,
-        query=query,
-        top_k=5,
-        section_filter=section_filter,
-    )
+    if not resume_id or not query:
+        return {"retrieved_chunks": []}
+
+    try:
+        chunks = retrieve_chunks(
+            resume_id=resume_id,
+            query=query,
+            top_k=5,
+            section_filter=section_filter,
+        )
+    except Exception as e:
+        logger.warning("chunk_retrieval_failed", resume_id=resume_id, error=str(e))
+        chunks = []
 
     logger.info(
         "chunks_retrieved",

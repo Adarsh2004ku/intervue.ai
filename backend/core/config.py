@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     """Groq API key - optional fallback provider"""
 
+    groq_model: str = "llama-3.3-70b-versatile"
+    """Groq OpenAI-compatible model used when Gemini fails"""
+
     elevenlabs_api_key: str = ""
     """ElevenLabs API key - used for speech-to-text transcription"""
 
@@ -111,8 +114,8 @@ class Settings(BaseSettings):
     # =====================================================
     # LLM MODEL CONFIGURATION
     # =====================================================
-    primary_llm: str = "gemini-2.0-flash-exp"
-    """Primary LLM for interview generation (updated from gemini-2.5-flash)"""
+    primary_llm: str = "gemini-2.5-flash"
+    """Primary LLM for interview generation"""
     
     embedding_model: str = "text-embedding-004"
     """Embedding model for resume parsing (updated from gemini-embedding-001)"""

@@ -49,6 +49,7 @@ export type InterviewRecord = {
   id: string;
   resume_id?: string;
   job_role?: string;
+  job_description?: string;
   interview_mode: InterviewMode;
   status: 'in_progress' | 'completed' | 'aborted';
   overall_score?: number | null;
@@ -74,6 +75,7 @@ export type StartInterviewResponse = {
   persona_name: string;
   opening_line: string;
   job_role: string;
+  job_description?: string;
   interview_mode: InterviewMode;
   resume_id?: string;
   created_at: string;
@@ -98,6 +100,10 @@ export type DashboardResponse = {
 export type InterviewStatusResponse = {
   interview: InterviewRecord;
   questions: InterviewQuestion[];
+};
+
+export type InterviewListResponse = {
+  interviews: InterviewRecord[];
 };
 
 export type Report = {
@@ -151,6 +157,8 @@ export type CostsResponse = {
 
 export type MetricsResponse = {
   status: string;
+  database?: Record<string, string>;
+  supabase_connected?: boolean;
   redis_connected?: boolean;
   redis_memory?: string;
   redis_error?: string;
@@ -172,6 +180,7 @@ export type AudioEvaluation = {
 export type AnalyzeAudioResponse = {
   success: boolean;
   evaluation?: AudioEvaluation;
+  next_question?: InterviewQuestion | null;
   cost?: CostRecord | null;
   session_cost?: CostSummary;
   error?: string;
@@ -215,12 +224,6 @@ export type BehaviorSummaryResponse = {
   success: boolean;
   summary?: BehaviorSummary;
   error?: string;
-};
-
-type StartInterviewRouteResponse = {
-  success: boolean;
-  interview_id: string;
-  created_at: string;
 };
 
 type GoogleAuthResponse = {
@@ -355,21 +358,128 @@ export const interviewQuestionBank: Record<InterviewMode, string[]> = {
   ],
 };
 
+const jobDescriptionStopWords = new Set([
+  'about',
+  'across',
+  'also',
+  'and',
+  'are',
+  'based',
+  'build',
+  'candidate',
+  'company',
+  'design',
+  'develop',
+  'experience',
+  'for',
+  'from',
+  'have',
+  'into',
+  'job',
+  'looking',
+  'must',
+  'our',
+  'role',
+  'should',
+  'skills',
+  'team',
+  'that',
+  'the',
+  'their',
+  'this',
+  'using',
+  'with',
+  'work',
+  'you',
+  'your',
+]);
+
+const getJobDescriptionTerms = (jobDescription = '') => {
+  const counts = new Map<string, number>();
+  const words = jobDescription.toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || [];
+
+  words.forEach((rawWord) => {
+    const word = rawWord.replace(/^[.-]+|[.-]+$/g, '');
+    if (!word || word.length < 3 || jobDescriptionStopWords.has(word)) {
+      return;
+    }
+    counts.set(word, (counts.get(word) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .sort((first, second) => second[1] - first[1])
+    .slice(0, 4)
+    .map(([word]) => word);
+};
+
+const joinFocusTerms = (terms: string[]) => {
+  if (terms.length === 0) {
+    return '';
+  }
+  if (terms.length === 1) {
+    return terms[0];
+  }
+  if (terms.length === 2) {
+    return `${terms[0]} and ${terms[1]}`;
+  }
+  return `${terms.slice(0, -1).join(', ')}, and ${terms[terms.length - 1]}`;
+};
+
+const createJobDescriptionQuestions = (jobRole: string, jobDescription = '') => {
+  const focus = joinFocusTerms(getJobDescriptionTerms(jobDescription));
+  const role = jobRole || 'this role';
+
+  if (!focus) {
+    return [];
+  }
+
+  return [
+    `This ${role} role emphasizes ${focus}. Which experience on your resume best proves you can handle that, and what evidence would you point to?`,
+    `Describe a project where you used ${focus} in a real delivery context. What trade-offs did you make?`,
+    `If you joined as a ${role}, what would you prioritize in your first 30 days based on this job description?`,
+    'Which requirement from this job description would be your biggest stretch, and how would you close the gap?',
+    `Imagine the team asks you to improve a system involving ${focus}. What would you inspect first, and how would you decide whether your change worked?`,
+    `Tell me about a time you had to learn or apply ${focus} quickly. What made the learning stick?`,
+    `How would you explain your strongest ${focus} experience to a non-technical stakeholder?`,
+    `What risks would you watch for in a ${role} role that depends on ${focus}, and how would you reduce them?`,
+    `Give me an example of a decision you made where ${focus} affected the implementation approach.`,
+    `Which part of this job description around ${focus} would you want to clarify with the hiring manager before joining?`,
+  ];
+};
+
 const createQuestion = (
   mode: InterviewMode,
   jobRole: string,
   orderIdx = 0,
-): InterviewQuestion => ({
-  text: interviewQuestionBank[mode][orderIdx % interviewQuestionBank[mode].length],
-  category: mode === 'hr' ? 'Behavioral' : 'Interview',
-  topic: jobRole || 'General',
-  difficulty: orderIdx === 0 ? 'warmup' : 'adaptive',
-  why_asked: 'This frontend question is sent to the backend audio evaluator for scoring.',
-  order_idx: orderIdx,
-});
+  jobDescription = '',
+  fallbackSeed = '',
+): InterviewQuestion => {
+  const roleQuestions = createJobDescriptionQuestions(jobRole, jobDescription);
+  const questions = roleQuestions.length ? roleQuestions : interviewQuestionBank[mode];
+  const seedOffset = fallbackSeed
+    ? Array.from(fallbackSeed).reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0) % questions.length
+    : 0;
 
-export function createLocalQuestion(mode: InterviewMode, jobRole: string, orderIdx: number) {
-  return createQuestion(mode, jobRole, orderIdx);
+  return {
+    text: questions[(orderIdx + seedOffset) % questions.length],
+    category: mode === 'hr' ? 'Behavioral' : 'Interview',
+    topic: jobRole || 'General',
+    difficulty: orderIdx === 0 ? 'warmup' : 'adaptive',
+    why_asked: roleQuestions.length
+      ? 'This fallback question uses the pasted job description and selected interview mode.'
+      : 'This frontend question is sent to the backend audio evaluator for scoring.',
+    order_idx: orderIdx,
+  };
+};
+
+export function createLocalQuestion(
+  mode: InterviewMode,
+  jobRole: string,
+  orderIdx: number,
+  jobDescription = '',
+  fallbackSeed = '',
+) {
+  return createQuestion(mode, jobRole, orderIdx, jobDescription, fallbackSeed);
 }
 
 export function normalizeDashboard(
@@ -377,12 +487,16 @@ export function normalizeDashboard(
   resumes: Resume[] = [],
   recentInterviews: InterviewRecord[] = [],
 ): DashboardResponse {
-  const average = admin.average_score || 0;
+  const completedInterviews = recentInterviews.filter((item) => item.status === 'completed');
+  const scoredInterviews = completedInterviews.filter((item) => typeof item.overall_score === 'number');
+  const average = scoredInterviews.length
+    ? Math.round(scoredInterviews.reduce((total, item) => total + (item.overall_score || 0), 0) / scoredInterviews.length)
+    : admin.average_score || 0;
 
   return {
     stats: {
-      total_interviews: admin.total_interviews || recentInterviews.length,
-      completed_interviews: admin.completed_interviews || recentInterviews.filter((item) => item.status === 'completed').length,
+      total_interviews: recentInterviews.length || admin.total_interviews || 0,
+      completed_interviews: completedInterviews.length || admin.completed_interviews || 0,
       average_score: average,
       overall_readiness: Math.round(average),
       weakest_topic: recentInterviews.length ? 'Review recent answer feedback' : 'Start with a mock interview',
@@ -396,9 +510,9 @@ export function normalizeDashboard(
         score: item.overall_score || 0,
       })),
     activities: [
-      { name: 'Users', value: admin.total_users || 0 },
+      { name: 'Interviews', value: recentInterviews.length || admin.total_interviews || 0 },
       { name: 'Resumes', value: resumes.length },
-      { name: 'Completed', value: admin.completed_interviews || 0 },
+      { name: 'Completed', value: completedInterviews.length || admin.completed_interviews || 0 },
     ],
     recent_interviews: recentInterviews,
     recommendations: [
@@ -461,20 +575,28 @@ export const api = {
   },
   interview: {
     health: () => request<{ status: string; service: string }>(`${interviewRouteBase}/health`),
-    start: async (resume_id: string, job_role: string, interview_mode: InterviewMode) => {
-      const result = await request<StartInterviewRouteResponse>(`${interviewRouteBase}/start`, {
+    list: () => request<InterviewListResponse>(interviewRouteBase),
+    status: (interviewId: string) => request<InterviewStatusResponse>(`${interviewRouteBase}/${interviewId}`),
+    start: async (
+      resume_id: string,
+      job_role: string,
+      interview_mode: InterviewMode,
+      job_description = '',
+    ) => {
+      const result = await request<StartInterviewResponse>(`${interviewRouteBase}/start`, {
         method: 'POST',
-        body: JSON.stringify({ resume_id, job_role, interview_mode }),
+        body: JSON.stringify({ resume_id, job_role, job_description, interview_mode }),
       });
       const persona = personaByMode[interview_mode];
 
       return {
         ...result,
-        first_question: createQuestion(interview_mode, job_role),
-        persona_name: persona.name,
-        opening_line: persona.openingLine,
-        job_role,
-        interview_mode,
+        first_question: result.first_question || createQuestion(interview_mode, job_role, 0, job_description, result.interview_id),
+        persona_name: result.persona_name || persona.name,
+        opening_line: result.opening_line || persona.openingLine,
+        job_role: result.job_role || job_role,
+        job_description: result.job_description || job_description,
+        interview_mode: result.interview_mode || interview_mode,
         resume_id,
         created_at: result.created_at || new Date().toISOString(),
       } satisfies StartInterviewResponse;
@@ -488,10 +610,13 @@ export const api = {
         body,
       });
     },
-    analyzeAudio: (interviewId: string, question: string, file: Blob, durationSec?: number) => {
+    analyzeAudio: (interviewId: string, question: string, file: Blob, durationSec?: number, questionId?: string) => {
       const body = new FormData();
       body.append('interview_id', interviewId);
       body.append('question', question);
+      if (questionId) {
+        body.append('question_id', questionId);
+      }
       if (typeof durationSec === 'number') {
         body.append('duration_sec', String(durationSec));
       }

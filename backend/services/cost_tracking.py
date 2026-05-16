@@ -163,6 +163,36 @@ def record_ai_cost(
         return None
 
 
+def record_vision_cost(
+    interview_id: str,
+    result: dict,
+    latency_ms: int,
+) -> dict[str, Any] | None:
+    usage = result.pop("_usage", None)
+    if not usage:
+        return None
+
+    tokens_in = int(usage.get("tokens_in") or 0)
+    tokens_out = int(usage.get("tokens_out") or 0)
+    model = usage.get("model") or settings.primary_llm
+    cost_inr = estimate_gemini_cost_inr(
+        model=model,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        input_modality="text_image_video",
+    )
+
+    return record_ai_cost(
+        interview_id=interview_id,
+        model=model,
+        call_type="vision_frame",
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_inr=cost_inr,
+        latency_ms=latency_ms,
+    )
+
+
 def get_interview_cost_summary(interview_id: str) -> dict[str, Any]:
     try:
         result = (

@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from ai.agents.llm import invoke_llm_text
 from pydantic import BaseModel, Field
 from backend.core.logging import get_logger
 
@@ -103,8 +103,6 @@ def classify_resume(raw_text: str) -> ParsedResume:
         logger.warning("resume_too_short", length=len(raw_text))
         return ParsedResume(summary="Resume content too short to parse")
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
-
     prompt = f"""You are a resume parser. Analyze the following resume text and extract 
 structured information.
 
@@ -118,11 +116,16 @@ Return ONLY valid JSON with these keys:
 Resume Text:
 {raw_text[:8000]}
 
-Return ONLY the JSON object, no markdown, no explanation."""
+    Return ONLY the JSON object, no markdown, no explanation."""
 
     try:
-        response = llm.invoke(prompt)
-        content = response.content.strip()
+        content = invoke_llm_text(
+            prompt,
+            model="gemini-2.5-flash",
+            temperature=0.1,
+            request_timeout=20,
+            purpose="resume_classification",
+        ).strip()
 
         # Strip markdown code fences if present
         if content.startswith("```"):

@@ -42,10 +42,12 @@ def retrieve_chunks(
     - 0.0 = pure diversity (may return irrelevant chunks)
     - 0.7 = balanced (default)
     """
-    # Step 1: Embed the query
-    query_vector = embed_text(query)
+    try:
+        query_vector = embed_text([query])[0]
+    except Exception as e:
+        logger.error("query_embedding_failed", error=str(e))
+        return []
 
-    # Step 2: Get candidate chunks from pgvector
     try:
         result = supabase.rpc(
             "match_chunks",

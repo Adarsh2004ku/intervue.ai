@@ -6,6 +6,7 @@ Provides test client, mock database, and mock LLM responses.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
 # Patch settings before importing app
 import os
@@ -19,14 +20,27 @@ def client():
 @pytest.fixture
 def mock_supabase():
     """Mock Supabase client for testing."""
-    with patch("backend.db.session.supabase") as mock_sb:
+    with patch("backend.db.session.supabase") as mock_sb, \
+         patch("backend.api.v1.routes.auth.supabase", mock_sb), \
+         patch("backend.api.v1.routes.resume.supabase", mock_sb), \
+         patch("backend.api.v1.routes.admin.supabase", mock_sb), \
+         patch("backend.services.interview.repository.supabase", mock_sb), \
+         patch("backend.services.reports.builder.supabase", mock_sb):
         # Flexible mock that handles both .eq() and non-.eq() chains
         mock_execute = MagicMock(data=[])
         mock_insert_execute = MagicMock(data=[{"id": "test-uuid", "email": "test@test.com"}])
+        auth_user = SimpleNamespace(
+            id="test-user-id",
+            email="test@test.com",
+            user_metadata={},
+        )
         
+        mock_sb.auth.admin.create_user.return_value = SimpleNamespace(user=auth_user)
+        mock_sb.auth.sign_in_with_password.return_value = SimpleNamespace(user=auth_user)
         mock_sb.table.return_value.select.return_value.execute.return_value = mock_execute
         mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_execute
         mock_sb.table.return_value.insert.return_value.execute.return_value = mock_insert_execute
+        mock_sb.table.return_value.upsert.return_value.execute.return_value = mock_insert_execute
         mock_sb.table.return_value.delete.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
         yield mock_sb
 

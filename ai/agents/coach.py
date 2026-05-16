@@ -1,7 +1,7 @@
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.core.config import settings
 from backend.db.session import supabase
+from ai.agents.llm import invoke_llm_text
 from ai.agents.state import InterviewState
 from backend.core.logging import get_logger
 
@@ -65,8 +65,6 @@ def coach_agent(state: InterviewState) -> dict:
     avg_clarity = sum(e.get("clarity_score", 0) for e in evaluations) / len(evaluations)
     avg_depth = sum(e.get("depth_score", 0) for e in evaluations) / len(evaluations)
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.3)
-
     # Build detailed Q&A summary for the LLM
     qa_summary = ""
     for i, (q, e) in enumerate(zip(questions, evaluations)):
@@ -101,8 +99,12 @@ def coach_agent(state: InterviewState) -> dict:
         Return ONLY valid JSON with these exact keys."""
 
     try:
-        response = llm.invoke(prompt)
-        content = response.content.strip()
+        content = invoke_llm_text(
+            prompt,
+            temperature=0.3,
+            request_timeout=20,
+            purpose="coach_report",
+        ).strip()
         if content.startswith("```"):
             parts = content.split("```")
             if len(parts) >= 2:

@@ -7,7 +7,7 @@ Admin routes:
 
 from datetime import date
 from fastapi import APIRouter
-from backend.db.session import supabase, redis_client
+from backend.db.session import check_db_connection, supabase, redis_client
 from backend.core.logging import get_logger
 
 logger = get_logger("admin_routes")
@@ -21,9 +21,13 @@ async def admin_dashboard():
     interviews = supabase.table("interviews").select("id, status, overall_score").execute()
     total_interviews = len(interviews.data) if interviews.data else 0
     completed = [i for i in (interviews.data or []) if i.get("status") == "completed"]
+    scored_completed = [
+        i for i in completed
+        if isinstance(i.get("overall_score"), (int, float))
+    ]
     avg_score = (
-        sum(i.get("overall_score", 0) for i in completed) / len(completed)
-        if completed else 0
+        sum(i["overall_score"] for i in scored_completed) / len(scored_completed)
+        if scored_completed else 0
     )
 
     # Total users
@@ -74,6 +78,10 @@ async def get_costs(days: int = 7):
 async def get_metrics():
     """Get system-level metrics for monitoring."""
     metrics = {"status": "ok"}
+
+    database = check_db_connection()
+    metrics["database"] = database
+    metrics["supabase_connected"] = database.get("supabase") == "ok"
 
     try:
         metrics["redis_connected"] = redis_client.ping()

@@ -1,7 +1,7 @@
 import json
 from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.core.config import settings
+from ai.agents.llm import invoke_llm_text
 from ai.agents.state import InterviewState
 from backend.core.logging import get_logger
 
@@ -38,8 +38,6 @@ def evaluator_agent(state: InterviewState) -> dict:
     current_question = questions[-1]
     current_answer = answers[-1]
 
-    llm = ChatGoogleGenerativeAI(model=settings.primary_llm, temperature=0.1)
-
     prompt = f"""You are an expert interview evaluator. Evaluate this answer carefully.
 
     Question: {current_question.get('text', '')}
@@ -66,8 +64,12 @@ def evaluator_agent(state: InterviewState) -> dict:
     }}"""
 
     try:
-        response = llm.invoke(prompt)
-        content = response.content.strip()
+        content = invoke_llm_text(
+            prompt,
+            temperature=0.1,
+            request_timeout=20,
+            purpose="answer_evaluation",
+        ).strip()
         if content.startswith("```"):
             parts = content.split("```")
             if len(parts) >= 2:

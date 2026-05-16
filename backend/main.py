@@ -15,6 +15,7 @@ from backend.api.v1.router import api_router
 # --- CRITICAL FIX: Inject API keys into system environment ---
 # LangChain/Gemini looks for these in os.environ, not just Pydantic Settings.
 os.environ['GOOGLE_API_KEY'] = settings.google_api_key
+os.environ['GROQ_API_KEY'] = settings.groq_api_key
 os.environ['LANGCHAIN_TRACING_V2'] = str(settings.langchain_tracing_v2).lower()
 os.environ['LANGSMITH_API_KEY'] = settings.langsmith_api_key
 os.environ['LANGSMITH_PROJECT'] = settings.langsmith_project

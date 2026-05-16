@@ -69,6 +69,7 @@ CREATE TABLE interviews (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
     resume_id UUID REFERENCES resumes(id) ON DELETE SET NULL,
     job_role TEXT NOT NULL,
+    job_description TEXT DEFAULT '',
     interview_mode TEXT DEFAULT 'faang'
         CHECK (interview_mode IN ('faang', 'startup', 'hr')),
     status TEXT DEFAULT 'in_progress'

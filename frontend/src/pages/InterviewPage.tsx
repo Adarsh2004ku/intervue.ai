@@ -105,6 +105,26 @@ const InterviewPage: React.FC = () => {
     const checkInterviewApi = async () => {
       try {
         await api.interview.health();
+        const status = await api.interview.status(interviewId);
+        const latestQuestion = status.questions[status.questions.length - 1];
+
+        if (latestQuestion) {
+          setCurrentQuestion(latestQuestion);
+          setQuestionNumber((latestQuestion.order_idx || 0) + 1);
+          activeInterviewStore().set({
+            success: true,
+            interview_id: status.interview.id,
+            first_question: latestQuestion,
+            persona_name: activeInterview?.persona_name || 'Intervue.ai Interview',
+            opening_line: activeInterview?.opening_line || '',
+            job_role: status.interview.job_role || activeInterview?.job_role || 'General',
+            job_description: status.interview.job_description || activeInterview?.job_description || '',
+            interview_mode: status.interview.interview_mode || activeInterview?.interview_mode || 'faang',
+            resume_id: status.interview.resume_id,
+            created_at: status.interview.created_at || new Date().toISOString(),
+          });
+        }
+
         setSessionStatus('Session ready');
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
@@ -503,7 +523,13 @@ const InterviewPage: React.FC = () => {
 
     try {
       setSessionStatus('Answer sent. Waiting for evaluation...');
-      const result = await api.interview.analyzeAudio(interviewId, question, blob, durationSec);
+      const result = await api.interview.analyzeAudio(
+        interviewId,
+        question,
+        blob,
+        durationSec,
+        currentQuestion.id,
+      );
 
       if (!result.success || !result.evaluation) {
         setSessionStatus(result.error || 'Audio evaluation failed');
@@ -521,11 +547,13 @@ const InterviewPage: React.FC = () => {
       interviewHistoryStore().update(interviewId, { overall_score: evaluation.score });
 
       const nextOrder = questionNumber;
-      const nextQuestion = createLocalQuestion(
-        activeInterview?.interview_mode || 'faang',
-        activeInterview?.job_role || 'General role',
-        nextOrder,
-      );
+      const nextQuestion = result.next_question || createLocalQuestion(
+          activeInterview?.interview_mode || 'faang',
+          activeInterview?.job_role || 'General role',
+          nextOrder,
+          activeInterview?.job_description || '',
+          interviewId,
+        );
       setCurrentQuestion(nextQuestion);
       setQuestionNumber(nextOrder + 1);
       activeInterviewStore().update({
