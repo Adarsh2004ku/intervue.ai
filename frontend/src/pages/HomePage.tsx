@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bell, Settings, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark } from 'lucide-react';
+import { Bell, Settings, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -8,6 +8,7 @@ import {
   CostsResponse,
   DashboardResponse,
   InterviewMode,
+  InterviewRecord,
   MetricsResponse,
   Resume,
   UserProfile,
@@ -53,6 +54,7 @@ const HomePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [downloadingReportId, setDownloadingReportId] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'interviews' | 'resumes' | 'reports' | 'practice'>('overview');
@@ -280,20 +282,44 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleDownloadReport = async (interviewId: string) => {
+  const saveReportBlob = (blob: Blob, interviewId: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `intervue-report-${interviewId.slice(0, 8)}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadReport = async (interview: InterviewRecord) => {
+    if (interview.status !== 'completed') {
+      setError('Complete the interview before generating a PDF report.');
+      return;
+    }
+
     try {
       setError('');
-      setStatus('Preparing report download...');
-      const blob = await api.report.downloadPdf(interviewId);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `intervue-report-${interviewId.slice(0, 8)}.pdf`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      setDownloadingReportId(interview.id);
+      setStatus('Preparing PDF report...');
+      let blob: Blob;
+      try {
+        blob = await api.report.downloadPdf(interview.id);
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 404) {
+          throw err;
+        }
+        setStatus('Generating PDF report...');
+        await api.interview.complete(interview.id, interview.overall_score ?? null, null);
+        blob = await api.report.downloadPdf(interview.id);
+      }
+      saveReportBlob(blob, interview.id);
       setStatus('Report downloaded.');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Report is not ready yet.');
+      setError(err instanceof ApiError ? err.message : 'Unable to generate PDF report.');
+    } finally {
+      setDownloadingReportId('');
     }
   };
 
@@ -654,16 +680,19 @@ const HomePage: React.FC = () => {
                   </div>
                 </div>
                 <div className={styles.interviewScore}>
-                  {activeTab === 'reports' && (
+                  {interview.status === 'completed' && (
                     <button
                       type="button"
-                      className={styles.smallAction}
+                      className={styles.pdfAction}
+                      disabled={downloadingReportId === interview.id}
+                      title="Download PDF report"
                       onClick={(event) => {
                         event.stopPropagation();
-                        handleDownloadReport(interview.id);
+                        handleDownloadReport(interview);
                       }}
                     >
-                      PDF
+                      <FileDown size={16} />
+                      <span>{downloadingReportId === interview.id ? 'Generating' : 'PDF report'}</span>
                     </button>
                   )}
                   <div className={styles.scoreCircle} style={{

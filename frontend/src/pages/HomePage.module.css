@@ -706,6 +706,39 @@
   background: #ddd6fe;
 }
 
+.pdfAction {
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 0.45rem 0.7rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.pdfAction:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.pdfAction:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.pdfAction svg {
+  flex-shrink: 0;
+}
+
 .scoreCircle {
   width: 60px;
   height: 60px;
