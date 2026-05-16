@@ -3,7 +3,15 @@ FastAPI application entry point.
 """
 
 import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Vercel may build this app with backend/ as the project root. Keep the
+# repository root importable so absolute imports like backend.core and ai work.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from fastapi import FastAPI
 from backend.core.config import settings
