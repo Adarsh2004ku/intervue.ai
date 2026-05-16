@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 
 from fastapi import (
@@ -14,7 +13,6 @@ from fastapi import (
 from pydantic import BaseModel
 
 from ai.agents.generator import clean_job_description
-from ai.graph.builder import run_question_turn
 from ai.personas.interviewer_personas import get_persona
 from backend.core.logging import get_logger
 from backend.core.security import get_current_user
@@ -39,6 +37,10 @@ from backend.services.interview.realtime import (
 from backend.services.interview.session_state import (
     reset_interview_session,
     with_session_interview_context,
+)
+from backend.services.interview.starter import (
+    build_starter_interview_plan,
+    first_intro_question_payload,
 )
 
 
@@ -105,6 +107,16 @@ async def start_interview(
     if not isinstance(parsed_resume, dict):
         parsed_resume = {"summary": str(parsed_resume)}
 
+    interview_plan = build_starter_interview_plan(
+        job_role=created_interview["job_role"],
+        interview_mode=req.interview_mode,
+    )
+    first_question_payload = first_intro_question_payload(
+        interview_mode=req.interview_mode,
+        job_role=created_interview["job_role"],
+        job_description=created_interview["job_description"],
+        interview_id=interview_id,
+    )
     agent_state = {
         "user_id": user["sub"],
         "interview_id": interview_id,
@@ -112,9 +124,9 @@ async def start_interview(
         "job_role": created_interview["job_role"],
         "job_description": created_interview["job_description"],
         "resume_summary": parsed_resume,
-        "difficulty": "",
-        "interview_plan": [],
-        "questions": [],
+        "difficulty": "medium",
+        "interview_plan": interview_plan,
+        "questions": [first_question_payload],
         "answers": [],
         "evaluations": [],
         "speech_metrics": [],
@@ -128,12 +140,6 @@ async def start_interview(
         "retrieved_chunks": [],
         "report": None,
     }
-    agent_state = await asyncio.to_thread(
-        run_question_turn,
-        agent_state,
-        include_planner=True,
-    )
-    first_question_payload = agent_state["questions"][-1]
 
     reset_interview_session(
         interview_id,

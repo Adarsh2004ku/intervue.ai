@@ -468,6 +468,9 @@ const createJobDescriptionQuestions = (jobRole: string, jobDescription = '') => 
   ];
 };
 
+const introQuestionText = 'To start, please give me a brief introduction about yourself, your background, and the experience or project most relevant to this role.';
+const introQuestionReason = 'Every interview starts with a brief candidate introduction before role-specific questions.';
+
 const createQuestion = (
   mode: InterviewMode,
   jobRole: string,
@@ -475,6 +478,17 @@ const createQuestion = (
   jobDescription = '',
   fallbackSeed = '',
 ): InterviewQuestion => {
+  if (orderIdx === 0) {
+    return {
+      text: introQuestionText,
+      category: 'Introduction',
+      topic: 'Candidate background',
+      difficulty: 'warmup',
+      why_asked: introQuestionReason,
+      order_idx: orderIdx,
+    };
+  }
+
   const roleQuestions = createJobDescriptionQuestions(jobRole, jobDescription);
   const questions = roleQuestions.length ? roleQuestions : interviewQuestionBank[mode];
   const seedOffset = fallbackSeed

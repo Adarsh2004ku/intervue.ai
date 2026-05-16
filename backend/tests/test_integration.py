@@ -6,6 +6,7 @@ Uses httpx AsyncClient for real HTTP calls against a running test server.
 
 from unittest.mock import patch
 
+from backend.services.interview.starter import INTRO_QUESTION_TEXT
 from backend.services.resume_parser import ParsedResume
 
 
@@ -58,15 +59,6 @@ class TestFullInterviewFlow:
 
     def test_interview_start(self, client, auth_headers, mock_supabase, mock_redis):
         """Test that starting an interview generates a question and connects to WS."""
-        question = {
-            "text": "Tell me about Python",
-            "category": "Technical",
-            "topic": "Python",
-            "difficulty": "medium",
-            "why_asked": "Resume mentions Python",
-            "is_weakness_focused": False,
-            "order_idx": 0,
-        }
         persona = {"name": "Alex (FAANG Interviewer)", "opening_line": "Let's begin."}
         created_interview = {
             "id": "test-interview-id",
@@ -76,19 +68,13 @@ class TestFullInterviewFlow:
             "interview_mode": "faang",
             "created_at": "2026-05-16T00:00:00+00:00",
         }
-        agent_state = {
-            "questions": [question],
-            "interview_plan": [],
-        }
         with patch("backend.api.v1.routes.interview.fetch_resume_for_user") as mock_resume, \
              patch("backend.api.v1.routes.interview.create_interview_record") as mock_create, \
-             patch("backend.api.v1.routes.interview.run_question_turn") as mock_run_turn, \
              patch("backend.api.v1.routes.interview.insert_question") as mock_insert, \
              patch("backend.api.v1.routes.interview.get_persona") as mock_persona:
             mock_resume.return_value = {"id": "fake-resume-id", "parsed_json": {"skills": ["Python"]}}
             mock_create.return_value = created_interview
-            mock_run_turn.return_value = agent_state
-            mock_insert.return_value = question
+            mock_insert.side_effect = lambda _, payload: {"id": "question-id", **payload}
             mock_persona.return_value = persona
             
             res = client.post(
@@ -99,5 +85,5 @@ class TestFullInterviewFlow:
             assert res.status_code == 200
             data = res.json()
             assert "interview_id" in data
-            assert data["first_question"]["text"] == "Tell me about Python"
+            assert data["first_question"]["text"] == INTRO_QUESTION_TEXT
             assert "Alex" in data["persona_name"]
