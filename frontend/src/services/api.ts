@@ -321,40 +321,46 @@ const interviewRouteBase = '/interview/interview';
 
 const personaByMode: Record<InterviewMode, { name: string; openingLine: string; starter: string }> = {
   faang: {
-    name: 'Alex (FAANG Interviewer)',
-    openingLine: "Hi, I'm Alex. Today we'll go deep on your technical skills. Let's begin.",
-    starter: 'Walk me through one technically challenging project from your resume. What trade-offs did you make, and how did you validate the result?',
+    name: 'Alex (Senior FAANG Interviewer)',
+    openingLine: "Hi, I'm Alex. I'll run this like a real technical loop: background, project deep dive, technical drill, system design case, behavioral follow-up, then your questions.",
+    starter: 'To start, give me a concise overview of your background and the project on your resume that best matches this role.',
   },
   startup: {
     name: 'Priya (Startup Founder)',
-    openingLine: "Hey! I'm Priya. Tell me about something you built and shipped. I want to hear the real story.",
-    starter: 'Tell me about a product or feature you shipped under constraints. What did you prioritize, and what would you improve now?',
+    openingLine: "Hey, I'm Priya. I'll make this feel like a real startup interview: shipped work, a product case, architecture under constraints, ownership, and then your questions.",
+    starter: 'To start, what kind of product work energizes you, and why is this role interesting right now?',
   },
   hr: {
-    name: 'Riya (HR Manager)',
-    openingLine: "Hello! I'm Riya, and I'm excited to learn more about you today. Let's get started.",
-    starter: 'Tell me about yourself and a recent experience that shows how you work with a team.',
+    name: 'Riya (People and Hiring Manager)',
+    openingLine: "Hello, I'm Riya. We'll keep this structured: your background, role fit, a few behavioral scenarios, logistics, and then your questions.",
+    starter: 'To start, tell me about your background and what attracted you to this role.',
   },
 };
 
 export const interviewQuestionBank: Record<InterviewMode, string[]> = {
   faang: [
     personaByMode.faang.starter,
-    'Describe a difficult bug or performance issue you solved. How did you isolate the root cause?',
-    'Pick a system you have built. How would you scale it if usage increased by 10x?',
-    'Tell me about an edge case you almost missed and how you handled it.',
+    'Walk me through one technically challenging project from your resume. What trade-offs did you make, and how did you validate the result?',
+    'Describe a difficult bug or performance issue you solved. How did you isolate the root cause and prove the fix?',
+    'System design case: design a role-relevant service. Clarify requirements, then cover APIs, data model, scaling bottlenecks, reliability, observability, and rollout.',
+    'Tell me about a time you disagreed on a technical direction. What did you do, and what changed?',
+    'Before we close, what would you ask the hiring team about architecture, ownership, roadmap, or success expectations?',
   ],
   startup: [
     personaByMode.startup.starter,
-    'Tell me about a time you had to move fast with incomplete information. What did you do?',
-    'What is one product decision you influenced, and how did you measure whether it worked?',
+    'Tell me about a product or feature you shipped under constraints. What did you prioritize, and what would you improve now?',
+    'Product case: a key metric drops after launch. How would you diagnose the issue, prioritize fixes, and communicate the plan?',
+    'Design the smallest reliable technical solution you would ship first for this role. What would you defer?',
     'Describe a moment when you took ownership beyond your assigned role.',
+    'Before we wrap, what would you ask a founder about users, runway, team, and success expectations?',
   ],
   hr: [
     personaByMode.hr.starter,
+    'Which experience from your resume best connects to this job description, and why?',
     'Tell me about a time you handled conflict with a teammate or stakeholder.',
     'Describe a failure or setback. What did you learn, and what changed afterward?',
-    'What kind of work environment helps you do your best work?',
+    'What kind of work environment helps you do your best work, and where do you struggle?',
+    'Before we close, what questions do you have about the role, team culture, interview process, or next steps?',
   ],
 };
 

@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 import httpx
@@ -8,6 +9,72 @@ from backend.core.logging import get_logger
 
 
 logger = get_logger("llm_provider")
+
+_GEMINI_COOLDOWN_UNTIL = 0.0
+_GEMINI_RATE_LIMIT_MARKERS = (
+    "429",
+    "quota",
+    "rate limit",
+    "ratelimit",
+    "rate_limit",
+    "resource_exhausted",
+    "resource exhausted",
+    "too many requests",
+    "exceeded",
+)
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _GEMINI_RATE_LIMIT_MARKERS)
+
+
+def _gemini_cooldown_remaining() -> float:
+    return max(0.0, _GEMINI_COOLDOWN_UNTIL - time.time())
+
+
+def _start_gemini_cooldown() -> None:
+    global _GEMINI_COOLDOWN_UNTIL
+
+    cooldown_seconds = max(0, settings.gemini_cooldown_seconds)
+    if cooldown_seconds <= 0:
+        return
+
+    _GEMINI_COOLDOWN_UNTIL = max(
+        _GEMINI_COOLDOWN_UNTIL,
+        time.time() + cooldown_seconds,
+    )
+
+
+def _invoke_groq_fallback(
+    prompt: str,
+    *,
+    temperature: float,
+    max_tokens: int | None,
+    request_timeout: int,
+    purpose: str,
+) -> str:
+    try:
+        content = _invoke_groq(
+            prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            request_timeout=request_timeout,
+        )
+        logger.info(
+            "groq_fallback_succeeded",
+            purpose=purpose,
+            model=settings.groq_model,
+        )
+        return content
+    except Exception as groq_error:
+        logger.warning(
+            "groq_fallback_failed",
+            purpose=purpose,
+            model=settings.groq_model,
+            error=str(groq_error),
+        )
+        raise
 
 
 def _invoke_gemini(
@@ -78,6 +145,23 @@ def invoke_llm_text(
 ) -> str:
     model = model or settings.primary_llm
 
+    cooldown_remaining = _gemini_cooldown_remaining()
+    if cooldown_remaining > 0 and settings.groq_api_key:
+        logger.warning(
+            "gemini_skipped_during_rate_limit_cooldown",
+            purpose=purpose,
+            model=model,
+            fallback_model=settings.groq_model,
+            cooldown_remaining_seconds=round(cooldown_remaining, 2),
+        )
+        return _invoke_groq_fallback(
+            prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            request_timeout=request_timeout,
+            purpose=purpose,
+        )
+
     try:
         return _invoke_gemini(
             prompt,
@@ -93,25 +177,20 @@ def invoke_llm_text(
             model=model,
             error=str(gemini_error),
         )
+        if _is_rate_limit_error(gemini_error):
+            _start_gemini_cooldown()
+            logger.warning(
+                "gemini_rate_limit_cooldown_started",
+                purpose=purpose,
+                model=model,
+                fallback_model=settings.groq_model,
+                cooldown_seconds=settings.gemini_cooldown_seconds,
+            )
 
-    try:
-        content = _invoke_groq(
-            prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            request_timeout=request_timeout,
-        )
-        logger.info(
-            "groq_fallback_succeeded",
-            purpose=purpose,
-            model=settings.groq_model,
-        )
-        return content
-    except Exception as groq_error:
-        logger.warning(
-            "groq_fallback_failed",
-            purpose=purpose,
-            model=settings.groq_model,
-            error=str(groq_error),
-        )
-        raise
+    return _invoke_groq_fallback(
+        prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        request_timeout=request_timeout,
+        purpose=purpose,
+    )

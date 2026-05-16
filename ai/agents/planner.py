@@ -13,6 +13,98 @@ Generates a structured interview plan that biases toward weak areas.
 """
 logger = get_logger("planner")
 
+
+def _persona_flow_text(persona: dict) -> str:
+    flow = persona.get("interview_flow", [])
+    if not flow:
+        return "No explicit persona flow configured."
+
+    lines = []
+    for step in flow:
+        signals = ", ".join(step.get("signals", [])) or "general signal"
+        lines.append(
+            f"- {step.get('phase')}: {step.get('category')} | "
+            f"goal={step.get('goal')} | signals={signals} | "
+            f"default_count={step.get('default_count', 1)}"
+        )
+    return "\n".join(lines)
+
+
+def _fallback_interview_plan(
+    *,
+    persona: dict,
+    job_role: str,
+    interview_mode: str,
+    difficulty: str,
+) -> list[dict]:
+    flow = persona.get("interview_flow", [])
+    if not flow:
+        return [
+            {
+                "phase": "resume_deep_dive",
+                "category": "Resume Deep Dive",
+                "topic": job_role or "Relevant experience",
+                "count": 2,
+                "difficulty": difficulty,
+                "focus": "project ownership, trade-offs, and validation",
+                "question_type": "resume_deep_dive",
+                "success_signal": "Candidate explains real work with measurable impact.",
+            },
+            {
+                "phase": "system_design_case",
+                "category": "System Design",
+                "topic": f"{job_role or 'Role'} architecture case",
+                "count": 2,
+                "difficulty": difficulty,
+                "focus": "requirements, scale, data model, APIs, trade-offs, and rollout",
+                "question_type": "case_study",
+                "success_signal": "Candidate clarifies constraints and makes sensible trade-offs.",
+            },
+        ]
+
+    plan = []
+    for step in flow:
+        phase = step.get("phase", "interview")
+        category = step.get("category", "Interview")
+        count = step.get("default_count", 1)
+        if phase == "opening":
+            topic = f"{job_role or 'Role'} background and motivation"
+            focus = "concise background, role alignment, and agenda confirmation"
+            question_type = "opening"
+        elif "system" in phase or "architecture" in phase:
+            topic = f"{job_role or 'Role'} architecture case"
+            focus = "requirements, scale, APIs, storage, bottlenecks, observability, and rollout"
+            question_type = "system_design_case"
+        elif "case" in phase or "product" in phase:
+            topic = f"{job_role or 'Role'} product case"
+            focus = "problem framing, prioritization, metrics, risks, and launch plan"
+            question_type = "case_study"
+        elif "behavior" in phase or "team" in phase:
+            topic = "Behavioral evidence"
+            focus = "STAR example, conflict, feedback, ownership, and reflection"
+            question_type = "behavioral"
+        elif phase == "closing":
+            topic = "Candidate questions"
+            focus = "candidate curiosity and role understanding"
+            question_type = "closing"
+        else:
+            topic = job_role or category
+            focus = step.get("goal") or "role-relevant evidence"
+            question_type = "resume_deep_dive"
+
+        plan.append({
+            "phase": phase,
+            "category": category,
+            "topic": topic,
+            "count": count,
+            "difficulty": difficulty,
+            "focus": focus,
+            "question_type": question_type,
+            "success_signal": (step.get("signals") or [step.get("goal") or "clear signal"])[0],
+        })
+    return plan
+
+
 def _fetch_weak_topics(user_id:str, threshold:int = 60)->list[str]:
     """Fetch topics where user's avg_score is below threshold."""
     try :
@@ -81,25 +173,49 @@ def planner_agent(state: InterviewState) -> dict:
     Job Role: {job_role}
     Job Description: {job_description[:3000] if job_description else 'Not provided'}
     Interview Mode: {interview_mode} ({persona['style']})
+    Persona opening line: {persona.get('opening_line', '')}
     Candidate's Weak Topics: {weak_topics if weak_topics else 'None detected yet'}
     Candidate's Strong Topics: {strong_topics if strong_topics else 'None detected yet'}
     Difficulty Profile: {difficulty_profile}
     Resume Summary: {json.dumps(resume_summary)[:2000]}
 
-    Create an interview plan for {settings.max_questions_per_interview} questions.
+    Persona interview flow:
+    {_persona_flow_text(persona)}
+
+    Create a realistic interview plan for {settings.max_questions_per_interview} questions.
 
     Rules:
-    1. Allocate 60% of questions to weak topics (if any exist)
-    2. Allocate 30% to new/untested topics from the job role
-    3. Allocate 10% to strong topics (confirmation)
-    4. Adjust difficulty based on the candidate's profile
+    1. Follow the persona interview flow in order.
+    2. Include at least one resume/project deep dive when resume context exists.
+    3. For technical or startup modes, include a realistic system design, architecture, or product case study stage.
+    4. Include behavioral evidence and closing/candidate-question stages.
+    5. Bias follow-ups toward weak topics when they exist, but do not skip the real interview progression.
+    6. Adjust difficulty based on the candidate's profile.
 
     Return ONLY valid JSON:
     {{
         "difficulty": "medium",
         "interview_plan": [
-            {{"category": "DSA", "topic": "Binary Trees", "count": 2, "difficulty": "medium", "focus": "traversal algorithms"}},
-            {{"category": "System Design", "topic": "Caching", "count": 2, "difficulty": "hard", "focus": "distributed caching"}}
+            {{
+                "phase": "resume_deep_dive",
+                "category": "Resume Deep Dive",
+                "topic": "Most relevant backend project",
+                "count": 2,
+                "difficulty": "medium",
+                "focus": "ownership, trade-offs, validation",
+                "question_type": "resume_deep_dive",
+                "success_signal": "Candidate explains real decisions and measurable impact"
+            }},
+            {{
+                "phase": "system_design_case",
+                "category": "System Design",
+                "topic": "Design a job-matching notification system",
+                "count": 2,
+                "difficulty": "hard",
+                "focus": "requirements, APIs, data model, scale, reliability, observability",
+                "question_type": "case_study",
+                "success_signal": "Candidate clarifies constraints and defends trade-offs"
+            }}
         ]
     }}"""
 
@@ -127,7 +243,12 @@ def planner_agent(state: InterviewState) -> dict:
         )
         return {
             "difficulty": plan_data.get("difficulty", "medium"),
-            "interview_plan": plan_data.get("interview_plan", []),
+            "interview_plan": plan_data.get("interview_plan", []) or _fallback_interview_plan(
+                persona=persona,
+                job_role=job_role,
+                interview_mode=interview_mode,
+                difficulty=plan_data.get("difficulty", "medium"),
+            ),
             "weak_topics": weak_topics,
             "strong_topics": strong_topics,
             "difficulty_profile": difficulty_profile,
@@ -143,13 +264,15 @@ def planner_agent(state: InterviewState) -> dict:
         }
     except (json.JSONDecodeError, Exception) as e:
         logger.error("planner_failed", error=str(e))
-        # Fallback plan
+        difficulty = "medium"
         return {
-            "difficulty": "medium",
-            "interview_plan": [
-                {"category": "Technical", "topic": job_role, "count": 5, "difficulty": "medium", "focus": "general"},
-                {"category": "HR", "topic": "Behavioural", "count": 3, "difficulty": "easy", "focus": "STAR method"},
-            ],
+            "difficulty": difficulty,
+            "interview_plan": _fallback_interview_plan(
+                persona=persona,
+                job_role=job_role,
+                interview_mode=interview_mode,
+                difficulty=difficulty,
+            ),
             "weak_topics": weak_topics,
             "strong_topics": strong_topics,
             "difficulty_profile": difficulty_profile,

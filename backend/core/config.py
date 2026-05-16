@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     """Groq OpenAI-compatible model used when Gemini fails"""
 
+    gemini_cooldown_seconds: int = 300
+    """Seconds to use Groq first after Gemini quota or rate-limit errors"""
+
     elevenlabs_api_key: str = ""
     """ElevenLabs API key - used for speech-to-text transcription"""
 

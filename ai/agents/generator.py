@@ -18,22 +18,28 @@ logger = get_logger("generator_agent")
 
 QUESTION_BANK = {
     "faang": [
+        "To start, give me a concise overview of your background and the project on your resume that best matches this role.",
         "Walk me through one technically challenging project from your resume. What trade-offs did you make, and how did you validate the result?",
         "Describe a difficult bug or performance issue you solved. How did you isolate the root cause?",
-        "Pick a system you have built. How would you scale it if usage increased by 10x?",
-        "Tell me about an edge case you almost missed and how you handled it.",
+        "Let's run a system design case. Design a service for a realistic product workflow in this role, including requirements, APIs, data model, scaling bottlenecks, and failure handling.",
+        "Tell me about a time you disagreed on a technical direction. What did you do, and what changed?",
+        "Before we close, what would you ask the team to understand whether this role is a strong fit?",
     ],
     "startup": [
+        "To start, what kind of product work energizes you, and why is this role interesting right now?",
         "Tell me about a product or feature you shipped under constraints. What did you prioritize, and what would you improve now?",
-        "Tell me about a time you had to move fast with incomplete information. What did you do?",
-        "What is one product decision you influenced, and how did you measure whether it worked?",
+        "Let's do a product case. A key metric drops after launch. How would you diagnose the issue, prioritize fixes, and communicate the plan?",
+        "Design the smallest reliable technical solution you would ship first for this role. What would you defer?",
         "Describe a moment when you took ownership beyond your assigned role.",
+        "Before we wrap, what would you ask a founder to understand whether this is the right company for you?",
     ],
     "hr": [
-        "Tell me about yourself and a recent experience that shows how you work with a team.",
+        "To start, tell me about your background and what attracted you to this role.",
+        "Which experience from your resume best connects to this job description, and why?",
         "Tell me about a time you handled conflict with a teammate or stakeholder.",
         "Describe a failure or setback. What did you learn, and what changed afterward?",
-        "What kind of work environment helps you do your best work?",
+        "What kind of work environment helps you do your best work, and where do you struggle?",
+        "What questions do you have about the role, team, culture, or next steps?",
     ],
 }
 
@@ -160,6 +166,103 @@ def _context_questions(
     ]
 
 
+def _phase_key(topic_info: dict[str, Any] | None) -> str:
+    if not topic_info:
+        return ""
+    text = " ".join(
+        str(topic_info.get(key, ""))
+        for key in ("phase", "category", "topic", "focus", "question_type")
+    ).lower()
+    if "closing" in text or "candidate question" in text:
+        return "closing"
+    if "opening" in text or "introduction" in text:
+        return "opening"
+    if "system" in text or "architecture" in text:
+        return "system_design"
+    if "case" in text or "product" in text:
+        return "case_study"
+    if "behavior" in text or "conflict" in text or "team" in text:
+        return "behavioral"
+    if "resume" in text or "project" in text or "experience" in text or "shipping" in text:
+        return "resume_deep_dive"
+    if "technical" in text or "debug" in text or "performance" in text:
+        return "technical_depth"
+    return ""
+
+
+def _phase_questions(
+    *,
+    mode: str,
+    job_role: str,
+    job_description: str,
+    resume_context: str,
+    topic_info: dict[str, Any] | None,
+) -> list[str]:
+    phase = _phase_key(topic_info)
+    if not phase:
+        return []
+
+    role = job_role or "this role"
+    topic = (topic_info or {}).get("topic") or role
+    focus = (topic_info or {}).get("focus") or _human_join(
+        job_description_terms(f"{job_description} {resume_context}")
+    )
+    signal = (topic_info or {}).get("success_signal") or "clear hiring signal"
+    focus_clause = f" around {focus}" if focus else ""
+
+    if phase == "opening":
+        return [
+            f"To start, give me a two-minute overview of your background and why {role} is the right next step.",
+            f"Before we go deeper, which project or experience from your resume should I use as the anchor for this {role} interview?",
+        ]
+    if phase == "resume_deep_dive":
+        return [
+            f"Let's go deep on {topic}. What was the problem, what did you personally own, and how did you know the result worked?",
+            f"Pick the resume project most relevant to {role}{focus_clause}. Walk me through the hardest technical decision and the trade-off you chose.",
+            f"When you worked on {topic}, what failed or surprised you, and how did that change your implementation?",
+        ]
+    if phase == "technical_depth":
+        return [
+            f"Let's drill into {topic}. What edge cases or performance limits would you test before trusting your solution in production?",
+            f"Suppose {topic} starts failing intermittently in production. How would you isolate the root cause and prove the fix?",
+            f"What is the most important technical trade-off in {topic}{focus_clause}, and what alternative would you reject?",
+        ]
+    if phase == "system_design":
+        return [
+            f"System design case: design {topic} for a real {role} team. Start by clarifying requirements, then cover APIs, data model, scaling bottlenecks, reliability, observability, and rollout.",
+            f"Imagine {topic} must support 10x growth with strict reliability needs. What architecture would you propose, where would it fail first, and how would you validate it?",
+            f"Design a production-ready approach for {topic}{focus_clause}. What would you build first, what would you defer, and what metrics would tell you it is working?",
+        ]
+    if phase == "case_study":
+        return [
+            f"Case study: {topic}. Walk me through how you would frame the problem, choose priorities, define success metrics, and de-risk the first release.",
+            f"A stakeholder asks you to solve {topic}{focus_clause} in two weeks. What would you ship, what would you explicitly not ship, and how would you communicate the trade-offs?",
+            f"Let's make this practical: for {topic}, what data would you inspect first, what hypotheses would you test, and what decision would you make if the data is inconclusive?",
+        ]
+    if phase == "behavioral":
+        return [
+            f"Tell me about a real situation where you had to demonstrate {signal}. What was the situation, what did you do, and what changed afterward?",
+            f"Describe a time you had conflict or disagreement while working on something related to {role}. How did you handle it?",
+            f"Give me an example where you received hard feedback. What did you change in your next project?",
+        ]
+    if phase == "closing":
+        if mode == "startup":
+            return [
+                "Before we wrap, what would you ask me about the product, users, runway, team, and success expectations?",
+                f"What would you need to learn in your first week to decide where you can create the most leverage as a {role}?",
+            ]
+        if mode == "hr":
+            return [
+                "Before we close, what questions do you have about the role, team culture, interview process, or next steps?",
+                f"What would help you decide whether this {role} opportunity is the right environment for you?",
+            ]
+        return [
+            "Before we close, what would you ask the hiring team about architecture, ownership, roadmap, or success expectations?",
+            f"What would you want to clarify about the {role} role before joining?",
+        ]
+    return []
+
+
 def _normalize_question(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", text.lower())).strip()
 
@@ -221,15 +324,23 @@ def question_payload(
     previous_questions: list[str] | None = None,
     last_evaluation: dict[str, Any] | None = None,
     fallback_seed: str = "",
+    topic_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     previous_questions = previous_questions or []
+    phase_questions = _phase_questions(
+        mode=mode,
+        job_role=job_role,
+        job_description=clean_job_description(job_description),
+        resume_context=resume_context,
+        topic_info=topic_info,
+    )
     context_questions = _context_questions(
         job_role,
         clean_job_description(job_description),
         resume_context,
     )
     questions = QUESTION_BANK.get(mode, QUESTION_BANK["faang"])
-    selected_questions = context_questions or questions
+    selected_questions = phase_questions or context_questions or questions
     seeded_order_idx = order_idx + _seed_offset(fallback_seed, len(selected_questions))
     selected_question = _avoid_repeated_question(
         selected_questions,
@@ -246,9 +357,12 @@ def question_payload(
     return {
         "text": selected_question,
         "category": "Behavioral" if mode == "hr" else "Interview",
-        "topic": job_role or "General",
+        "topic": (topic_info or {}).get("topic") or job_role or "General",
         "difficulty": "warmup" if order_idx == 0 else "adaptive",
         "why_asked": (
+            "Generated from the current realistic interview stage, resume, pasted job description, selected interview mode, and job role."
+            if phase_questions
+            else
             "Generated from the resume, pasted job description, selected interview mode, and job role."
             if context_questions
             else "Generated from the selected interview mode and job role."
@@ -270,16 +384,16 @@ def _fallback_question_payload(
     topic_info: dict[str, Any] | None,
     fallback_seed: str,
 ) -> dict[str, Any]:
-    topic = (topic_info or {}).get("topic") or job_role
     payload = question_payload(
         mode,
-        topic,
+        job_role,
         order_idx,
         job_description,
         resume_context=resume_context,
         previous_questions=previous_questions,
         last_evaluation=last_evaluation,
         fallback_seed=fallback_seed,
+        topic_info=topic_info,
     )
     if topic_info:
         payload["category"] = topic_info.get("category") or payload["category"]
@@ -310,7 +424,16 @@ def _build_prompt(
     topic = (topic_info or {}).get("topic") or job_role
     category = (topic_info or {}).get("category") or "Role Fit"
     difficulty = (topic_info or {}).get("difficulty") or ("warmup" if order_idx == 0 else "adaptive")
+    phase = (topic_info or {}).get("phase") or _phase_key(topic_info) or "adaptive"
     focus = (topic_info or {}).get("focus") or ""
+    success_signal = (topic_info or {}).get("success_signal") or "clear hiring signal"
+    behaviors = "\n".join(
+        f"- {behavior}" for behavior in persona.get("interviewer_behaviors", [])
+    ) or "- Ask realistic follow-ups based on the candidate's answer"
+    flow = "\n".join(
+        f"- {step.get('phase')}: {step.get('goal')}"
+        for step in persona.get("interview_flow", [])
+    ) or "- Adaptive interview flow"
 
     return f"""You are {persona['name']}, conducting a {mode} mock interview.
 
@@ -319,13 +442,21 @@ Tone: {persona.get('tone', '')}
 Question style rules:
 {chr(10).join('- ' + rule for rule in persona.get('question_style', []))}
 
+Interviewer behaviors:
+{behaviors}
+
+Overall interview progression:
+{flow}
+
 Job role: {job_role}
 Question number: {order_idx + 1}
+Current interview stage: {phase}
 Question type: {question_type}
 Target topic: {topic}
 Category: {category}
 Difficulty: {difficulty}
 Focus: {focus}
+Success signal to test: {success_signal}
 
 Job description:
 {job_description or 'No job description provided.'}
@@ -346,13 +477,15 @@ Last evaluation:
 Score: {score if score is not None else 'N/A'}
 Reasoning: {(reasoning or 'N/A')[:800]}
 
-Generate exactly one fresh interview question grounded in the candidate's resume, pasted job description, job role, and target topic.
+Generate exactly one fresh interview question grounded in the candidate's resume, pasted job description, job role, current interview stage, and target topic.
 Rules:
 1. Do not repeat any previous question.
-2. If the last score is weak, ask a deeper follow-up on the same weakness.
-3. Otherwise, move to a new job-description requirement, resume project, target topic, or role-relevant angle.
-4. Make it specific enough that the candidate cannot answer with a generic script.
-5. Keep it to one question, no preamble.
+2. Make it sound like a real interviewer speaking live, not a written exam.
+3. If this is a system design, architecture, or case-study stage, include realistic constraints and ask the candidate to clarify requirements, reason through trade-offs, and define validation metrics.
+4. If this is a resume deep dive, ask for ownership, decisions, mistakes, trade-offs, and measurable validation.
+5. If this is a behavioral stage, ask for a concrete STAR example and one reflection.
+6. If the last score is weak, ask a deeper follow-up on the same weakness.
+7. Keep it to one question, no preamble.
 
 Return only valid JSON:
 {{

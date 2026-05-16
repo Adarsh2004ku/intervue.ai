@@ -508,9 +508,9 @@ const HomePage: React.FC = () => {
             <div className={styles.formRow}>
               <input value={jobRole} onChange={(event) => setJobRole(event.target.value)} placeholder="Job role" />
               <select value={interviewMode} onChange={(event) => setInterviewMode(event.target.value as InterviewMode)}>
-                <option value="faang">FAANG</option>
-                <option value="startup">Startup</option>
-                <option value="hr">HR</option>
+                <option value="faang">FAANG full loop</option>
+                <option value="startup">Startup case loop</option>
+                <option value="hr">HR behavioral loop</option>
               </select>
               <button type="submit" disabled={starting || !selectedResumeId}>
                 {starting ? 'Starting...' : 'Start'}
