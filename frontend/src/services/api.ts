@@ -108,15 +108,30 @@ export type InterviewListResponse = {
   interviews: InterviewRecord[];
 };
 
+export type ReportFeedbackEntry = {
+  question?: string;
+  score?: number | null;
+  accuracy?: number | null;
+  clarity?: number | null;
+  depth?: number | null;
+  reasoning?: string;
+};
+
 export type Report = {
   id: string;
   interview_id: string;
   overall_score?: number;
   grade?: string;
   interview_readiness?: string;
-  feedback_json?: Record<string, unknown>;
+  feedback_json?: Record<string, ReportFeedbackEntry | unknown>;
   improvement_plan?: unknown[];
-  speech_summary?: Record<string, unknown>;
+  speech_summary?: {
+    answer_count?: number;
+    average_clarity?: number;
+    average_confidence?: number;
+    behavior_summary?: BehaviorSummary | Record<string, unknown>;
+    job_description_focus?: string[];
+  } & Record<string, unknown>;
   strengths?: string[];
   next_session_focus?: string[];
   created_at?: string;
@@ -735,7 +750,7 @@ export function interviewHistoryStore() {
     },
     upsert: (value: InterviewRecord) => {
       const current = interviewHistoryStore().list();
-      const next = [value, ...current.filter((item) => item.id !== value.id)].slice(0, 12);
+      const next = [value, ...current.filter((item) => item.id !== value.id)].slice(0, 10);
       localStorage.setItem(key, JSON.stringify(next));
     },
     update: (interviewId: string, patch: Partial<InterviewRecord>) => {

@@ -5,6 +5,7 @@ const LandingPage = lazy(() => import('./pages/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const InterviewPage = lazy(() => import('./pages/InterviewPage'));
+const ResultPage = lazy(() => import('./pages/ResultPage'));
 
 const App: React.FC = () => {
   return (
@@ -19,6 +20,7 @@ const App: React.FC = () => {
           {/* Protected Routes */}
           <Route path="/home" element={<HomePage />} />
           <Route path="/interview" element={<InterviewPage />} />
+          <Route path="/interview/result/:interviewId" element={<ResultPage />} />
           
           {/* Catch all - redirect to home */}
           <Route path="*" element={<Navigate to="/" replace />} />

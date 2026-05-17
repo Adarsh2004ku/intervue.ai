@@ -1,7 +1,5 @@
 from typing import Any
 
-from ai.agents.generator import question_payload
-
 
 INTRO_QUESTION_TEXT = (
     "To start, please give me a brief introduction about yourself, "
@@ -100,21 +98,7 @@ def first_intro_question_payload(
     job_description: str,
     interview_id: str,
 ) -> dict[str, Any]:
-    payload = question_payload(
-        interview_mode,
-        job_role,
-        0,
-        job_description,
-        topic_info={
-            "phase": "opening",
-            "category": "Introduction",
-            "topic": "Candidate background",
-            "difficulty": "warmup",
-            "focus": "brief candidate introduction and role alignment",
-        },
-        fallback_seed=interview_id,
-    )
-    payload.update({
+    return {
         "text": INTRO_QUESTION_TEXT,
         "category": "Introduction",
         "topic": "Candidate background",
@@ -122,5 +106,4 @@ def first_intro_question_payload(
         "why_asked": INTRO_QUESTION_REASON,
         "is_weakness_focused": False,
         "order_idx": 0,
-    })
-    return payload
+    }

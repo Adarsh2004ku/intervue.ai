@@ -722,7 +722,7 @@ const InterviewPage: React.FC = () => {
     }
     audioContextRef.current?.close();
     activeInterviewStore().clear();
-    navigate('/home');
+    navigate(interviewId ? `/interview/result/${interviewId}` : '/home');
   };
 
   const containerVariants = {

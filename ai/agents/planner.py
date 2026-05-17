@@ -5,7 +5,7 @@ from ai.agents.llm import invoke_llm_text
 from ai.personas.interviewer_personas import get_persona
 from ai.agents.state import InterviewState, empty_interview_state_fields
 from backend.core.logging import get_logger
-from backend.services.interview.topic_profile import fetch_strong_topics, fetch_weak_topics
+from backend.services.interview.topic_profile import fetch_topic_profile
 
 """
 Planner Agent — the first agent in the LangGraph.
@@ -132,9 +132,10 @@ def planner_agent(state: InterviewState) -> dict:
     interview_mode = state.get("interview_mode", "faang")
     resume_summary = state.get("resume_summary", {})
 
-    # Fetch user's historical topic performance
-    weak_topics = fetch_weak_topics(user_id)
-    strong_topics = fetch_strong_topics(user_id)
+    # Fetch user's historical topic performance in one DB round trip.
+    topic_profile = fetch_topic_profile(user_id)
+    weak_topics = topic_profile["weak_topics"]
+    strong_topics = topic_profile["strong_topics"]
     difficulty_profile = _get_difficulty_profile(user_id)
 
     persona = get_persona(interview_mode)

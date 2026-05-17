@@ -1881,6 +1881,41 @@
   color: var(--home-muted);
 }
 
+.weakTopicPanel {
+  margin: -1.5rem 0 1.5rem;
+  border: 1px solid var(--home-border);
+  border-radius: 24px;
+  background: var(--home-card-soft);
+  box-shadow: var(--home-shadow);
+  padding: 1.5rem;
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.topicPillGrid,
+.topicList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.topicPillGrid span,
+.topicList span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid rgba(124, 58, 237, 0.16);
+  border-radius: 999px;
+  background: var(--home-lavender);
+  color: var(--home-primary);
+  padding: 0.45rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.topicList {
+  margin-bottom: 1rem;
+}
+
 @media (max-width: 860px) {
   .sidebar {
     width: 100%;

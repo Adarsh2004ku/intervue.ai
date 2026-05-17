@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bell, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { LineTrendChart } from '../components/charts/SimpleCharts';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import { motion } from '../components/ui/staticMotion';
 import {
   ApiError,
-  CostsResponse,
   DashboardResponse,
   InterviewMode,
   InterviewRecord,
+  Report,
+  ReportFeedbackEntry,
   Resume,
   UserProfile,
   activeInterviewStore,
@@ -40,12 +40,65 @@ const emptyDashboard: DashboardResponse = {
   resumes: [],
 };
 
+const REPORT_LIMIT = 10;
+
+const reportTime = (interview: InterviewRecord) => (
+  new Date(interview.completed_at || interview.created_at || 0).getTime()
+);
+
+const sortNewestInterviews = (interviews: InterviewRecord[]) => (
+  [...interviews].sort((left, right) => reportTime(right) - reportTime(left))
+);
+
+const feedbackEntries = (report: Report) => (
+  Object.entries(report.feedback_json || {})
+    .map(([topic, details]) => {
+      if (!details || typeof details !== 'object') {
+        return null;
+      }
+      return {
+        topic,
+        ...(details as ReportFeedbackEntry),
+      };
+    })
+    .filter((entry): entry is ReportFeedbackEntry & { topic: string } => Boolean(entry))
+);
+
+const uniqueTopics = (topics: string[]) => {
+  const seen = new Set<string>();
+  return topics.filter((topic) => {
+    const cleanTopic = topic.trim();
+    if (!cleanTopic || seen.has(cleanTopic.toLowerCase())) {
+      return false;
+    }
+    seen.add(cleanTopic.toLowerCase());
+    return true;
+  });
+};
+
+const weakTopicsFromReports = (reports: Report[]) => {
+  const scoredWeakTopics = reports.flatMap((report) => (
+    feedbackEntries(report)
+      .filter((entry) => typeof entry.score === 'number' && Number(entry.score) < 70)
+      .map((entry) => entry.topic)
+  ));
+  const fallbackFocus = reports.flatMap((report) => report.next_session_focus || []);
+  return uniqueTopics([...scoredWeakTopics, ...fallbackFocus]).slice(0, 6);
+};
+
+const readinessLabel = (value?: string) => {
+  if (!value) {
+    return 'Readiness pending';
+  }
+  return value.replace(/_/g, ' ');
+};
+
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
   const [resumes, setResumes] = useState<Resume[]>([]);
-  const [costs, setCosts] = useState<CostsResponse | null>(null);
+  const [reports, setReports] = useState<Report[]>([]);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
   const [jobDescription, setJobDescription] = useState('');
@@ -69,11 +122,10 @@ const HomePage: React.FC = () => {
         setLoading(true);
         const localInterviews = interviewHistoryStore().list();
         const me = await api.auth.me();
-        const [adminResult, resumeResult, interviewResult, costsResult] = await Promise.allSettled([
+        const [adminResult, resumeResult, interviewResult] = await Promise.allSettled([
           api.admin.dashboard(),
           api.resume.list(),
           api.interview.list(),
-          api.admin.costs(7),
         ]);
 
         const adminData = adminResult.status === 'fulfilled'
@@ -88,24 +140,21 @@ const HomePage: React.FC = () => {
         const resumeData = resumeResult.status === 'fulfilled'
           ? resumeResult.value
           : { resumes: [] };
-        const recentInterviews = interviewResult.status === 'fulfilled'
-          ? interviewResult.value.interviews
-          : localInterviews;
-        const costsData = costsResult.status === 'fulfilled'
-          ? costsResult.value
-          : null;
+        const recentInterviews = sortNewestInterviews(
+          interviewResult.status === 'fulfilled'
+            ? interviewResult.value.interviews
+            : localInterviews,
+        );
         const dashboardData = normalizeDashboard(adminData, resumeData.resumes, recentInterviews);
 
         setProfile(me);
         setDashboard(dashboardData);
         setResumes(resumeData.resumes);
-        setCosts(costsData);
         setSelectedResumeId(resumeData.resumes[0]?.id || dashboardData.resumes[0]?.id || '');
         if (
           adminResult.status === 'rejected'
           || resumeResult.status === 'rejected'
           || interviewResult.status === 'rejected'
-          || costsResult.status === 'rejected'
         ) {
           setStatus('Logged in. Some dashboard data is temporarily unavailable.');
         }
@@ -124,11 +173,55 @@ const HomePage: React.FC = () => {
     loadDashboard();
   }, [navigate]);
 
-  const chartData = dashboard.score_trend.length
-    ? dashboard.score_trend
-    : [{ name: 'No scores yet', score: 0 }];
+  const sortedInterviews = useMemo(
+    () => sortNewestInterviews(dashboard.recent_interviews),
+    [dashboard.recent_interviews],
+  );
+  const reportInterviews = useMemo(
+    () => sortedInterviews.filter((interview) => interview.status === 'completed').slice(0, REPORT_LIMIT),
+    [sortedInterviews],
+  );
+  const reportInterviewIds = useMemo(
+    () => reportInterviews.map((interview) => interview.id).join('|'),
+    [reportInterviews],
+  );
+  const reportByInterviewId = useMemo(
+    () => new Map(reports.map((report) => [report.interview_id, report])),
+    [reports],
+  );
+  const weakTopics = useMemo(() => weakTopicsFromReports(reports), [reports]);
+  const displayedWeakTopics = weakTopics.length
+    ? weakTopics
+    : [dashboard.stats.weakest_topic].filter(Boolean);
+
+  useEffect(() => {
+    if (!tokenStore.get() || reportInterviews.length === 0) {
+      setReports([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    Promise.allSettled(reportInterviews.map((interview) => api.report.get(interview.id)))
+      .then((results) => {
+        if (cancelled) {
+          return;
+        }
+        setReports(results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reportInterviews, reportInterviewIds]);
 
   const statCards = useMemo(() => [
+    {
+      label: 'Overall Score',
+      value: String(dashboard.stats.average_score || 0),
+      status: '/100 average',
+      trend: dashboard.stats.completed_interviews ? 'From completed reports' : 'Complete an interview first',
+      color: '#7C3AED',
+    },
     {
       label: 'Overall Readiness',
       value: `${dashboard.stats.overall_readiness || 0}%`,
@@ -143,21 +236,7 @@ const HomePage: React.FC = () => {
       trend: `${dashboard.stats.resume_count} resumes uploaded`,
       color: '#8B5CF6',
     },
-    {
-      label: 'Average Score',
-      value: String(dashboard.stats.average_score || 0),
-      status: '/100',
-      trend: dashboard.stats.average_score >= 75 ? 'Strong progress' : 'Keep practicing',
-      color: '#7C3AED',
-    },
-    {
-      label: 'AI Spend',
-      value: `₹${(costs?.total_cost_inr ?? costs?.records.reduce((total, item) => total + (item.cost_inr || 0), 0) ?? 0).toFixed(2)}`,
-      status: 'Last 7 days',
-      trend: `${costs?.records.length || 0} calls · ${costs?.total_tokens || 0} tokens`,
-      color: '#8B5CF6',
-    },
-  ], [costs, dashboard]);
+  ], [dashboard]);
 
   const handleLogout = () => {
     tokenStore.clear();
@@ -327,7 +406,7 @@ const HomePage: React.FC = () => {
     },
     reports: {
       title: 'Reports',
-      description: 'Download reports for completed interviews when a backend report is available.',
+      description: 'Your latest 10 completed interview reports.',
     },
     practice: {
       title: 'Practice',
@@ -336,7 +415,6 @@ const HomePage: React.FC = () => {
   }[activeTab];
 
   const selectedResume = resumes.find((resume) => resume.id === selectedResumeId);
-  const reportInterviews = dashboard.recent_interviews.filter((interview) => interview.status === 'completed');
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -474,6 +552,26 @@ const HomePage: React.FC = () => {
           ))}
         </motion.div>}
 
+        {activeTab === 'overview' && (
+          <motion.section
+            className={styles.weakTopicPanel}
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <div className={styles.sectionHeader}>
+              <h3>Weak Topics</h3>
+              <span>{displayedWeakTopics.length} focus areas</span>
+            </div>
+
+            <div className={styles.topicPillGrid}>
+              {displayedWeakTopics.map((topic) => (
+                <span key={topic}>{topic}</span>
+              ))}
+            </div>
+          </motion.section>
+        )}
+
         {activeTab === 'practice' && <motion.section
           className={styles.launchPanel}
           variants={containerVariants}
@@ -572,19 +670,6 @@ const HomePage: React.FC = () => {
         )}
 
         {activeTab === 'overview' && <motion.div
-          className={styles.chartsSection}
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-        >
-          <motion.div className={styles.chart} variants={itemVariants}>
-            <h3>Score Trend</h3>
-            <LineTrendChart data={chartData} />
-          </motion.div>
-        </motion.div>}
-
-        {activeTab === 'overview' && <motion.div
           className={styles.bottomSection}
           variants={containerVariants}
           initial="hidden"
@@ -597,17 +682,19 @@ const HomePage: React.FC = () => {
               <button className={styles.linkButton} type="button" onClick={() => setActiveTab('interviews')}>View all</button>
             </div>
 
-            {dashboard.recent_interviews.length === 0 && (
+            {sortedInterviews.length === 0 && (
               <p className={styles.emptyState}>No interviews yet. Start one from the practice tab.</p>
             )}
 
-            {dashboard.recent_interviews.map((interview) => (
+            {sortedInterviews.map((interview) => (
               <motion.div
                 key={interview.id}
                 className={styles.interviewItem}
                 whileHover={{ x: 10 }}
                 transition={{ duration: 0.3 }}
-                onClick={() => navigate(`/interview?interviewId=${interview.id}`)}
+                onClick={() => navigate(interview.status === 'completed'
+                  ? `/interview/result/${interview.id}`
+                  : `/interview?interviewId=${interview.id}`)}
               >
                 <div className={styles.interviewInfo}>
                   <div className={styles.interviewIcon}>
@@ -650,34 +737,15 @@ const HomePage: React.FC = () => {
           </motion.div>
 
           <motion.div className={styles.recommendations} variants={itemVariants}>
-            <h3>Recommended for you</h3>
-            <motion.div
-              className={styles.recommendationList}
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-            >
-              {dashboard.recommendations.map((rec, index) => (
-                <motion.div
-                  key={`${rec.title}-${index}`}
-                  className={styles.recommendationCard}
-                  variants={itemVariants}
-                  whileHover={{ scale: 1.05 }}
-                  style={{ borderLeftColor: ['#7C3AED', '#8B5CF6', '#DDD6FE'][index % 3] }}
-                >
-                  <span className={styles.recIcon}>{String(index + 1).padStart(2, '0')}</span>
-                  <h4>{rec.title}</h4>
-                  <p>{rec.description}</p>
-                  <motion.button
-                    className={styles.exploreBtn}
-                    whileHover={{ x: 5 }}
-                    onClick={() => setActiveTab('practice')}
-                  >
-                    Practice →
-                  </motion.button>
-                </motion.div>
+            <h3>Weak topic summary</h3>
+            <div className={styles.topicList}>
+              {displayedWeakTopics.map((topic) => (
+                <span key={topic}>{topic}</span>
               ))}
-            </motion.div>
+            </div>
+            <button className={styles.exploreBtn} type="button" onClick={() => setActiveTab('practice')}>
+              Practice these topics
+            </button>
           </motion.div>
         </motion.div>}
 
@@ -690,21 +758,23 @@ const HomePage: React.FC = () => {
           >
             <div className={styles.sectionHeader}>
               <h3>All Interviews</h3>
-              <span>{dashboard.recent_interviews.length} sessions</span>
+              <span>{sortedInterviews.length} sessions</span>
             </div>
 
-            {dashboard.recent_interviews.length === 0 && (
+            {sortedInterviews.length === 0 && (
               <p className={styles.emptyState}>No interviews yet. Start one from the practice tab.</p>
             )}
 
-            {dashboard.recent_interviews.map((interview) => (
+            {sortedInterviews.map((interview) => (
               <motion.div
                 key={interview.id}
                 className={styles.interviewItem}
                 variants={itemVariants}
                 whileHover={{ x: 10 }}
                 transition={{ duration: 0.3 }}
-                onClick={() => navigate(`/interview?interviewId=${interview.id}`)}
+                onClick={() => navigate(interview.status === 'completed'
+                  ? `/interview/result/${interview.id}`
+                  : `/interview?interviewId=${interview.id}`)}
               >
                 <div className={styles.interviewInfo}>
                   <div className={styles.interviewIcon}>
@@ -748,47 +818,66 @@ const HomePage: React.FC = () => {
               <p className={styles.emptyState}>No completed reports yet. Complete an interview first.</p>
             )}
 
-            {reportInterviews.map((interview) => (
-              <motion.div
-                key={interview.id}
-                className={styles.interviewItem}
-                variants={itemVariants}
-                whileHover={{ x: 10 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className={styles.interviewInfo}>
-                  <div className={styles.interviewIcon}>
-                    <BarChart3 size={18} />
+            {reportInterviews.map((interview) => {
+              const report = reportByInterviewId.get(interview.id);
+              return (
+                <motion.div
+                  key={interview.id}
+                  className={styles.interviewItem}
+                  variants={itemVariants}
+                  whileHover={{ x: 10 }}
+                  transition={{ duration: 0.3 }}
+                  onClick={() => navigate(`/interview/result/${interview.id}`)}
+                >
+                  <div className={styles.interviewInfo}>
+                    <div className={styles.interviewIcon}>
+                      <BarChart3 size={18} />
+                    </div>
+                    <div className={styles.interviewDetails}>
+                      <h4>{interview.job_role || 'Completed interview'}</h4>
+                      <p>
+                        {formatDate(interview.completed_at || interview.created_at)}
+                        {' · '}
+                        Score {report?.overall_score ?? interview.overall_score ?? 0}/100
+                        {' · '}
+                        {readinessLabel(report?.interview_readiness)}
+                      </p>
+                    </div>
                   </div>
-                  <div className={styles.interviewDetails}>
-                    <h4>{interview.job_role || 'Completed interview'}</h4>
-                    <p>
-                      {formatDate(interview.completed_at || interview.created_at)}
-                      {' · '}
-                      Score {interview.overall_score || 0}/100
-                      {interview.job_description ? ' · job description tailored' : ''}
-                    </p>
+                  <div className={styles.interviewScore}>
+                    <button
+                      type="button"
+                      className={styles.pdfAction}
+                      title="View result"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/interview/result/${interview.id}`);
+                      }}
+                    >
+                      Result
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.pdfAction}
+                      disabled={downloadingReportId === interview.id}
+                      title="Download PDF report"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDownloadReport(interview);
+                      }}
+                    >
+                      <FileDown size={16} />
+                      <span>{downloadingReportId === interview.id ? 'Generating' : 'PDF report'}</span>
+                    </button>
+                    <div className={styles.scoreCircle} style={{
+                      background: `conic-gradient(#7C3AED ${(report?.overall_score ?? interview.overall_score ?? 0) * 3.6}deg, #E9EAF3 0deg)`,
+                    }}>
+                      <span>{report?.overall_score ?? interview.overall_score ?? 0}</span>
+                    </div>
                   </div>
-                </div>
-                <div className={styles.interviewScore}>
-                  <button
-                    type="button"
-                    className={styles.pdfAction}
-                    disabled={downloadingReportId === interview.id}
-                    title="Download PDF report"
-                    onClick={() => handleDownloadReport(interview)}
-                  >
-                    <FileDown size={16} />
-                    <span>{downloadingReportId === interview.id ? 'Generating' : 'PDF report'}</span>
-                  </button>
-                  <div className={styles.scoreCircle} style={{
-                    background: `conic-gradient(#7C3AED ${(interview.overall_score || 0) * 3.6}deg, #E9EAF3 0deg)`,
-                  }}>
-                    <span>{interview.overall_score || 0}</span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </motion.section>
         )}
       </div>

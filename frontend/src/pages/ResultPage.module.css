@@ -1,0 +1,328 @@
+.resultPage {
+  --result-bg: #f8f9fc;
+  --result-card: rgba(255, 255, 255, 0.9);
+  --result-border: #e9eaf3;
+  --result-text: #1f1f28;
+  --result-muted: #70707b;
+  --result-primary: #7c3aed;
+  --result-secondary: #0f766e;
+  --result-soft: #f3f0ff;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(124, 58, 237, 0.12), transparent 30%),
+    radial-gradient(circle at 82% 12%, rgba(15, 118, 110, 0.11), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, var(--result-bg) 48%, #f6f4ff 100%);
+  color: var(--result-text);
+  font-family: var(--font-sans);
+  position: relative;
+  overflow-x: hidden;
+}
+
+.resultPage > div[aria-hidden="true"] {
+  opacity: 0.18;
+  filter: saturate(1.1) brightness(1.08);
+  mix-blend-mode: multiply;
+}
+
+.resultShell {
+  position: relative;
+  z-index: 1;
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--result-border);
+  border-radius: 24px;
+  background: var(--result-card);
+  box-shadow: 0 24px 70px rgba(31, 31, 40, 0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.eyebrow {
+  display: inline-flex;
+  color: var(--result-primary);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.resultHeader h1 {
+  margin: 0.25rem 0;
+  font-size: clamp(1.8rem, 3vw, 2.7rem);
+  line-height: 1.05;
+}
+
+.resultHeader p {
+  color: var(--result-muted);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.homeButton,
+.secondaryButton {
+  min-height: 44px;
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.homeButton {
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  background: linear-gradient(135deg, var(--result-primary), #8b5cf6);
+  color: #ffffff;
+  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.18);
+}
+
+.secondaryButton {
+  border: 1px solid rgba(124, 58, 237, 0.16);
+  background: #ffffff;
+  color: var(--result-primary);
+}
+
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.notice,
+.errorNotice {
+  border-radius: 18px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.notice {
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.errorNotice {
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.scoreGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.scoreCard,
+.panel,
+.behaviorPanel {
+  border: 1px solid var(--result-border);
+  border-radius: 24px;
+  background: var(--result-card);
+  box-shadow: 0 24px 70px rgba(31, 31, 40, 0.08);
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.scoreCard {
+  padding: 1.25rem;
+}
+
+.cardIcon {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(124, 58, 237, 0.14);
+  border-radius: 16px;
+  background: var(--result-soft);
+  color: var(--result-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.scoreCard span,
+.scoreCard small {
+  display: block;
+  color: var(--result-muted);
+  font-weight: 750;
+}
+
+.scoreCard strong {
+  display: block;
+  margin: 0.35rem 0;
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  line-height: 1;
+  color: var(--result-text);
+}
+
+.topicGrid,
+.contentGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel,
+.behaviorPanel {
+  padding: 1.35rem;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+  color: var(--result-primary);
+}
+
+.panelHeader h2 {
+  color: var(--result-text);
+  font-size: 1.12rem;
+}
+
+.topicList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.topicList span {
+  border: 1px solid rgba(124, 58, 237, 0.16);
+  border-radius: 999px;
+  background: var(--result-soft);
+  color: var(--result-primary);
+  padding: 0.45rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.questionList,
+.feedbackList {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.questionList article,
+.feedbackList article {
+  border: 1px solid var(--result-border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 1rem;
+}
+
+.questionList span {
+  display: inline-flex;
+  color: var(--result-primary);
+  font-size: 0.78rem;
+  font-weight: 900;
+  margin-bottom: 0.35rem;
+}
+
+.questionList h3 {
+  font-size: 0.98rem;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+}
+
+.questionList small,
+.feedbackList p,
+.behaviorPanel p {
+  color: var(--result-muted);
+  line-height: 1.55;
+}
+
+.feedbackList article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.feedbackList strong {
+  color: var(--result-text);
+}
+
+.feedbackList span {
+  color: var(--result-secondary);
+  font-weight: 900;
+}
+
+.behaviorGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.behaviorGrid span {
+  border: 1px solid var(--result-border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 0.9rem;
+  color: var(--result-muted);
+  font-weight: 750;
+}
+
+.behaviorGrid strong {
+  display: block;
+  color: var(--result-text);
+  font-size: 1.35rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 900px) {
+  .scoreGrid,
+  .topicGrid,
+  .contentGrid,
+  .behaviorGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .resultShell {
+    width: min(100% - 1rem, 1180px);
+    padding-top: 1rem;
+  }
+
+  .resultHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .headerActions,
+  .homeButton,
+  .secondaryButton,
+  .scoreGrid,
+  .topicGrid,
+  .contentGrid,
+  .behaviorGrid {
+    width: 100%;
+  }
+
+  .scoreGrid,
+  .topicGrid,
+  .contentGrid,
+  .behaviorGrid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -99,19 +99,6 @@ def get_session_frames(interview_id: str) -> list[dict[str, Any]]:
     return frames if isinstance(frames, list) else []
 
 
-class InterviewSessionStore:
-    """Compatibility wrapper for old code that reads interview_sessions[id]."""
-
-    def __getitem__(self, interview_id: str) -> dict[str, Any]:
-        return get_interview_session(interview_id)
-
-    def __setitem__(self, interview_id: str, session: dict[str, Any]) -> None:
-        save_interview_session(interview_id, session)
-
-
-interview_sessions = InterviewSessionStore()
-
-
 def reset_interview_session(
     interview_id: str,
     *,

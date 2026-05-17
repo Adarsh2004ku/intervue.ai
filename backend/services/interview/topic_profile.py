@@ -1,5 +1,3 @@
-from typing import Literal
-
 from backend.core.logging import get_logger
 from backend.db.session import supabase
 
@@ -7,36 +5,44 @@ from backend.db.session import supabase
 logger = get_logger("topic_profile")
 
 
-def fetch_topics_by_score(
+def fetch_topic_profile(
     user_id: str,
     *,
-    threshold: int,
-    comparison: Literal["lt", "gte"],
-) -> list[str]:
+    weak_threshold: int = 60,
+    strong_threshold: int = 75,
+) -> dict[str, list[str]]:
     try:
-        query = (
+        result = (
             supabase.table("user_topic_profiles")
             .select("topic, avg_score")
             .eq("user_id", user_id)
+            .execute()
         )
-        if comparison == "lt":
-            result = query.lt("avg_score", threshold).order("avg_score").execute()
-        else:
-            result = query.gte("avg_score", threshold).execute()
-        return [row["topic"] for row in (result.data or [])]
     except Exception as exc:
         logger.warning(
             "topic_profile_fetch_failed",
-            comparison=comparison,
-            threshold=threshold,
+            weak_threshold=weak_threshold,
+            strong_threshold=strong_threshold,
             error=str(exc),
         )
-        return []
+        return {"weak_topics": [], "strong_topics": []}
 
+    weak_topics = []
+    strong_topics = []
+    for row in result.data or []:
+        topic = row.get("topic")
+        if not topic:
+            continue
+        try:
+            score = float(row.get("avg_score") or 0)
+        except (TypeError, ValueError):
+            continue
+        if score < weak_threshold:
+            weak_topics.append((score, topic))
+        if score >= strong_threshold:
+            strong_topics.append((score, topic))
 
-def fetch_weak_topics(user_id: str, threshold: int = 60) -> list[str]:
-    return fetch_topics_by_score(user_id, threshold=threshold, comparison="lt")
-
-
-def fetch_strong_topics(user_id: str, threshold: int = 75) -> list[str]:
-    return fetch_topics_by_score(user_id, threshold=threshold, comparison="gte")
+    return {
+        "weak_topics": [topic for _, topic in sorted(weak_topics)],
+        "strong_topics": [topic for _, topic in sorted(strong_topics, reverse=True)],
+    }
