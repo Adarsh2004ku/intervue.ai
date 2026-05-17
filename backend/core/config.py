@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     """Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL"""
 
+    admin_emails: str = ""
+    """Comma-separated email allowlist for admin-only routes."""
+
     # =====================================================
     # LLM MODEL CONFIGURATION
     # =====================================================
@@ -166,6 +169,15 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> List[str]:
         """Parse comma-separated CORS origins into a list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    @property
+    def admin_email_list(self) -> List[str]:
+        """Parse comma-separated admin emails into a normalized list."""
+        return [
+            email.strip().lower()
+            for email in self.admin_emails.split(",")
+            if email.strip()
+        ]
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE_PATH),  # Uses absolute path!

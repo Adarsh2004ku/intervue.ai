@@ -1,18 +1,18 @@
 """
-Resume routes:
-- POST /upload — Upload PDF/DOCX resume, parse, embed, store
+- POST /upload — Upload PDF/DOCX resume, parse, save, queue embeddings
+- GET /{id}/embedding-tasks/{task_id} — Check queued embedding status
 - GET /{id} — Get parsed resume data
 - DELETE /{id} — Delete resume and all chunks
 """
 
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from backend.services.resume_parser import extract_text, classify_resume
 from backend.services.rag_ingestion import chunk_text, embed_and_store
 from backend.db.session import supabase
 from backend.core.security import get_current_user  # <-- Import the dependency
 from backend.core.logging import get_logger
-from backend.services.cache.task_queue import queue_or_run_inline
+from backend.services.cache.task_queue import get_celery_task_status, queue_or_run_inline
 from backend.services.cache.tasks import embed_resume_chunks_task
 from backend.services.embeddings.embedder import get_embedding_model_name
 
@@ -41,7 +41,7 @@ async def upload_resume(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)  # <-- This handles auth automatically!
 ):
-    """Upload a resume (PDF or DOCX), parse it, embed it, store in pgvector."""
+    """Upload a resume, save parsed data, and queue embeddings when Celery is enabled."""
     user_id = user["sub"]  # Extract user_id from the verified token
 
     # Validate file type
@@ -100,6 +100,7 @@ async def upload_resume(
             inline=lambda: embed_and_store(resume_id, chunks, section_tags),
             args=[resume_id, chunks, section_tags],
             description="resume embeddings",
+            fallback_inline=False,
         )
         task_result = embedding.get("result")
         if isinstance(task_result, dict):
@@ -141,6 +142,57 @@ def _resume_upload_message(embedding_status: str) -> str:
     if embedding_status == "queued":
         return "Resume parsed; embeddings are queued"
     return "Resume parsed; embeddings could not be generated"
+
+
+def _resume_embedding_status(task_status: str) -> str:
+    if task_status == "success":
+        return "completed"
+    if task_status in {"failure", "revoked"}:
+        return "failed"
+    return "queued"
+
+
+def _get_resume_for_current_user(resume_id: str, user: dict) -> dict:
+    result = (
+        supabase
+        .table("resumes")
+        .select("id, user_id")
+        .eq("id", resume_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    resume = result.data[0]
+    if resume.get("user_id") != user["sub"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    return resume
+
+
+@router.get("/{resume_id}/embedding-tasks/{task_id}")
+async def get_resume_embedding_task_status(
+    resume_id: str,
+    task_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Check the Celery status for a queued resume embedding task."""
+    _get_resume_for_current_user(resume_id, user)
+    task = get_celery_task_status(task_id)
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
+    chunks_stored = result.get("chunks_stored")
+
+    return {
+        "resume_id": resume_id,
+        "task_id": task_id,
+        "task_status": task["status"],
+        "embedding_status": _resume_embedding_status(task["status"]),
+        "ready": task["ready"],
+        "successful": task["successful"],
+        "failed": task["failed"],
+        "chunks_stored": chunks_stored,
+        "error": task.get("error"),
+    }
 
 
 @router.get("/{resume_id}")

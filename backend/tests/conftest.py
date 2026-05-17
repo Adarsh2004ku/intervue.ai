@@ -17,6 +17,15 @@ def client():
     from backend.main import app
     return TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def disable_celery_for_tests(monkeypatch):
+    """Keep tests inline unless a test explicitly enables Celery."""
+    from backend.core.config import settings
+
+    monkeypatch.setattr(settings, "celery_enabled", False)
+    monkeypatch.setattr(settings, "celery_task_always_eager", False)
+
 @pytest.fixture
 def mock_supabase():
     """Mock Supabase client for testing."""

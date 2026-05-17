@@ -45,6 +45,18 @@ export type ResumeUploadResponse = {
   message: string;
 };
 
+export type ResumeEmbeddingStatusResponse = {
+  resume_id: string;
+  task_id: string;
+  task_status: string;
+  embedding_status: 'queued' | 'completed' | 'failed';
+  ready: boolean;
+  successful: boolean;
+  failed: boolean;
+  chunks_stored?: number | null;
+  error?: string | null;
+};
+
 export type InterviewMode = 'faang' | 'startup' | 'hr';
 
 export type InterviewRecord = {
@@ -143,6 +155,45 @@ export type AdminDashboardResponse = {
   average_score: number;
   total_users: number;
   today_cost_inr: number;
+};
+
+export type AdminAccessResponse = {
+  is_admin: boolean;
+  email: string;
+  user_id: string;
+};
+
+export type AdminUserRecord = {
+  id: string;
+  email: string;
+  full_name?: string | null;
+  plan?: string | null;
+  difficulty_profile?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AdminReportRecord = {
+  id: string;
+  interview_id: string;
+  overall_score?: number | null;
+  grade?: string | null;
+  interview_readiness?: string | null;
+  strengths?: string[] | null;
+  next_session_focus?: string[] | null;
+  created_at?: string | null;
+};
+
+export type AdminOverviewResponse = {
+  dashboard: AdminDashboardResponse;
+  costs: CostsResponse;
+  metrics: MetricsResponse;
+  recent_users: AdminUserRecord[];
+  recent_interviews: Array<InterviewRecord & {
+    user_id?: string;
+    total_tokens?: number | null;
+  }>;
+  latest_reports: AdminReportRecord[];
 };
 
 export type CostRecord = {
@@ -617,6 +668,8 @@ export const api = {
         body,
       });
     },
+    embeddingStatus: (resumeId: string, taskId: string) =>
+      request<ResumeEmbeddingStatusResponse>(`/resume/${resumeId}/embedding-tasks/${taskId}`),
     get: (resumeId: string) => request<Resume>(`/resume/${resumeId}`),
     delete: (resumeId: string) =>
       request<{ message: string }>(`/resume/${resumeId}`, {
@@ -702,6 +755,8 @@ export const api = {
     },
   },
   admin: {
+    me: () => request<AdminAccessResponse>('/admin/me'),
+    overview: () => request<AdminOverviewResponse>('/admin/overview'),
     dashboard: () => request<AdminDashboardResponse>('/admin/dashboard'),
     costs: (days = 7) => request<CostsResponse>(`/admin/costs?days=${days}`),
     metrics: () => request<MetricsResponse>('/admin/metrics'),

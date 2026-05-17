@@ -63,3 +63,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     """
     token = credentials.credentials
     return decode_access_token(token)
+
+
+def is_admin_user(user: dict) -> bool:
+    """Return whether a decoded JWT payload belongs to an admin email."""
+    email = str(user.get("email") or "").strip().lower()
+    return bool(email and email in settings.admin_email_list)
+
+
+async def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
+    """Require the current user to be configured as an admin."""
+    if not is_admin_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user

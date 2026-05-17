@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown } from 'lucide-react';
+import { Bell, LogOut, Search, Home, BookOpen, FileText, BarChart3, Bookmark, FileDown, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ImmersiveStage } from '../components/immersive/ImmersiveStage';
 import { motion } from '../components/ui/staticMotion';
@@ -41,6 +41,9 @@ const emptyDashboard: DashboardResponse = {
 };
 
 const REPORT_LIMIT = 10;
+const EMBEDDING_STATUS_POLL_MS = 2000;
+const EMBEDDING_STATUS_MAX_POLLS = 20;
+type HomeTab = 'overview' | 'interviews' | 'resumes' | 'reports' | 'practice';
 
 const reportTime = (interview: InterviewRecord) => (
   new Date(interview.completed_at || interview.created_at || 0).getTime()
@@ -93,12 +96,17 @@ const readinessLabel = (value?: string) => {
   return value.replace(/_/g, ' ');
 };
 
+const wait = (ms: number) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms);
+});
+
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [adminAccess, setAdminAccess] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [jobRole, setJobRole] = useState('Frontend Developer');
   const [jobDescription, setJobDescription] = useState('');
@@ -109,7 +117,7 @@ const HomePage: React.FC = () => {
   const [downloadingReportId, setDownloadingReportId] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'interviews' | 'resumes' | 'reports' | 'practice'>('overview');
+  const [activeTab, setActiveTab] = useState<HomeTab>('overview');
 
   useEffect(() => {
     if (!tokenStore.get()) {
@@ -122,21 +130,12 @@ const HomePage: React.FC = () => {
         setLoading(true);
         const localInterviews = interviewHistoryStore().list();
         const me = await api.auth.me();
-        const [adminResult, resumeResult, interviewResult] = await Promise.allSettled([
-          api.admin.dashboard(),
+        const [resumeResult, interviewResult, adminAccessResult] = await Promise.allSettled([
           api.resume.list(),
           api.interview.list(),
+          api.admin.me(),
         ]);
 
-        const adminData = adminResult.status === 'fulfilled'
-          ? adminResult.value
-          : {
-              total_interviews: localInterviews.length,
-              completed_interviews: localInterviews.filter((item) => item.status === 'completed').length,
-              average_score: 0,
-              total_users: 0,
-              today_cost_inr: 0,
-            };
         const resumeData = resumeResult.status === 'fulfilled'
           ? resumeResult.value
           : { resumes: [] };
@@ -145,15 +144,27 @@ const HomePage: React.FC = () => {
             ? interviewResult.value.interviews
             : localInterviews,
         );
+        const completedInterviews = recentInterviews.filter((item) => item.status === 'completed');
+        const scoredInterviews = completedInterviews.filter((item) => typeof item.overall_score === 'number');
+        const averageScore = scoredInterviews.length
+          ? Math.round(scoredInterviews.reduce((total, item) => total + (item.overall_score || 0), 0) / scoredInterviews.length)
+          : 0;
+        const adminData = {
+          total_interviews: recentInterviews.length,
+          completed_interviews: completedInterviews.length,
+          average_score: averageScore,
+          total_users: 0,
+          today_cost_inr: 0,
+        };
         const dashboardData = normalizeDashboard(adminData, resumeData.resumes, recentInterviews);
 
         setProfile(me);
+        setAdminAccess(adminAccessResult.status === 'fulfilled' && adminAccessResult.value.is_admin);
         setDashboard(dashboardData);
         setResumes(resumeData.resumes);
         setSelectedResumeId(resumeData.resumes[0]?.id || dashboardData.resumes[0]?.id || '');
         if (
-          adminResult.status === 'rejected'
-          || resumeResult.status === 'rejected'
+          resumeResult.status === 'rejected'
           || interviewResult.status === 'rejected'
         ) {
           setStatus('Logged in. Some dashboard data is temporarily unavailable.');
@@ -243,6 +254,35 @@ const HomePage: React.FC = () => {
     navigate('/login');
   };
 
+  const pollResumeEmbedding = async (resumeId: string, taskId: string) => {
+    for (let attempt = 0; attempt < EMBEDDING_STATUS_MAX_POLLS; attempt += 1) {
+      await wait(EMBEDDING_STATUS_POLL_MS);
+
+      try {
+        const embedding = await api.resume.embeddingStatus(resumeId, taskId);
+
+        if (embedding.embedding_status === 'completed') {
+          const chunkCopy = embedding.chunks_stored
+            ? ` ${embedding.chunks_stored} chunks embedded.`
+            : '';
+          setStatus(`Resume ready for personalized questions.${chunkCopy}`);
+          return;
+        }
+
+        if (embedding.embedding_status === 'failed') {
+          setError(embedding.error || 'Resume embeddings failed. Try uploading again.');
+          return;
+        }
+      } catch (err) {
+        if (attempt === EMBEDDING_STATUS_MAX_POLLS - 1) {
+          setError(err instanceof ApiError ? err.message : 'Unable to check resume embedding status.');
+        }
+      }
+    }
+
+    setStatus('Resume parsed. Embeddings are still running in the background.');
+  };
+
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -258,6 +298,9 @@ const HomePage: React.FC = () => {
       setResumes(freshResumes.resumes);
       setSelectedResumeId(result.resume_id);
       setStatus(result.message);
+      if (result.embedding_status === 'queued' && result.embedding_task_id) {
+        void pollResumeEmbedding(result.resume_id, result.embedding_task_id);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Resume upload failed.');
     } finally {
@@ -389,6 +432,7 @@ const HomePage: React.FC = () => {
     { id: 'resumes', label: 'Resumes', icon: FileText },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'practice', label: 'Practice', icon: Bookmark },
+    ...(adminAccess ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
   ] as const;
 
   const tabCopy = {
@@ -453,7 +497,13 @@ const HomePage: React.FC = () => {
                   type="button"
                   className={`${styles.navItem} ${activeTab === item.id ? styles.active : ''}`}
                   whileHover={{ x: 5 }}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    if (item.id === 'admin') {
+                      navigate('/admin');
+                      return;
+                    }
+                    setActiveTab(item.id as HomeTab);
+                  }}
                 >
                   <Icon size={20} />
                   <span>{item.label}</span>

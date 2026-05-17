@@ -87,19 +87,101 @@ class TestResumeEndpoints:
         )
         assert response.status_code == 400
 
+    def test_upload_queues_embeddings_when_celery_enabled(
+        self,
+        client,
+        auth_headers,
+        mock_supabase,
+        monkeypatch,
+    ):
+        """Resume upload should return immediately after queueing embeddings."""
+        from backend.core.config import settings
+        from backend.services.resume_parser import ParsedResume
+
+        monkeypatch.setattr(settings, "celery_enabled", True)
+        monkeypatch.setattr(settings, "celery_task_always_eager", False)
+
+        with patch("backend.api.v1.routes.resume.extract_text") as mock_extract, \
+             patch("backend.api.v1.routes.resume.classify_resume") as mock_classify, \
+             patch("backend.api.v1.routes.resume.embed_and_store") as mock_embed, \
+             patch("backend.api.v1.routes.resume.embed_resume_chunks_task.apply_async") as mock_apply:
+            mock_extract.return_value = (
+                "Python backend development experience with APIs, databases, "
+                "testing, reliability, and production debugging."
+            )
+            mock_classify.return_value = ParsedResume(
+                skills=["Python"],
+                experience=["backend development"],
+                education=[],
+                projects=[],
+                summary="Backend developer",
+            )
+            mock_apply.return_value = SimpleNamespace(id="embedding-task-id")
+
+            response = client.post(
+                "/api/v1/resume/upload",
+                headers=auth_headers,
+                files={"file": ("resume.pdf", b"%PDF-1.4 fake resume content", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["embedding_status"] == "queued"
+        assert data["embedding_task_id"] == "embedding-task-id"
+        assert data["chunks_stored"] == 0
+        mock_apply.assert_called_once()
+        mock_embed.assert_not_called()
+
+    def test_embedding_task_status_requires_owned_resume(self, client, auth_headers, mock_supabase):
+        """Embedding task status should only be visible for the resume owner."""
+        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"id": "resume-id", "user_id": "test-user-id"}]
+        )
+
+        with patch("backend.api.v1.routes.resume.get_celery_task_status") as mock_status:
+            mock_status.return_value = {
+                "task_id": "embedding-task-id",
+                "status": "success",
+                "ready": True,
+                "successful": True,
+                "failed": False,
+                "result": {"resume_id": "resume-id", "chunks_stored": 4},
+            }
+
+            response = client.get(
+                "/api/v1/resume/resume-id/embedding-tasks/embedding-task-id",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["embedding_status"] == "completed"
+        assert data["chunks_stored"] == 4
+
 
 class TestAdminEndpoints:
     # Patch supabase exactly where it is used in admin.py
     @patch("backend.api.v1.routes.admin.supabase")
-    def test_dashboard_returns_data(self, mock_sb, client):
+    def test_dashboard_returns_data(self, mock_sb, client, auth_headers, monkeypatch):
         """Admin dashboard should return KPI data."""
+        from backend.core.config import settings
+
+        monkeypatch.setattr(settings, "admin_emails", "test@test.com")
         # Setup the mock to return empty lists so it doesn't crash
         mock_execute = MagicMock(data=[])
         mock_sb.table.return_value.select.return_value.execute.return_value = mock_execute
         mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_execute
 
-        response = client.get("/api/v1/admin/dashboard")
+        response = client.get("/api/v1/admin/dashboard", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "total_interviews" in data
         assert data["total_interviews"] == 0
+
+    def test_dashboard_rejects_non_admin(self, client, auth_headers, monkeypatch):
+        """Admin dashboard should reject authenticated non-admin users."""
+        from backend.core.config import settings
+
+        monkeypatch.setattr(settings, "admin_emails", "owner@test.com")
+        response = client.get("/api/v1/admin/dashboard", headers=auth_headers)
+        assert response.status_code == 403
