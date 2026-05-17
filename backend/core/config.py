@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     elevenlabs_stt_model: str = "scribe_v2"
     """ElevenLabs speech-to-text model"""
 
-    elevenlabs_voice_id: str = "JBFqnCBsd6RMkjVDRZzb"
+    elevenlabs_voice_id: str = "Qdoacjdd3OKJ1mMc318A"
     """ElevenLabs voice ID used for interviewer speech"""
 
     elevenlabs_tts_model: str = "eleven_flash_v2_5"
