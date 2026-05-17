@@ -41,11 +41,6 @@ def _with_job_description_default(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def verify_resume_for_user(resume_id: str, user: dict) -> None:
-    if not fetch_resume_for_user(resume_id, user):
-        raise HTTPException(status_code=404, detail="Resume not found")
-
-
 def fetch_resume_for_user(resume_id: str, user: dict) -> dict[str, Any] | None:
     resume = (
         supabase.table("resumes")

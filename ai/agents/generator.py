@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import json
 import random
@@ -609,13 +608,6 @@ def generate_question_payload_sync(
             error=str(e),
         )
         return _fallback_question_payload(context)
-
-
-async def generate_question_payload(**kwargs: Any) -> dict[str, Any]:
-    return await asyncio.to_thread(
-        generate_question_payload_sync,
-        **kwargs,
-    )
 
 
 def _expanded_plan(interview_plan: list[dict]) -> list[dict]:

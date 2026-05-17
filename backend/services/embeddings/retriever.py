@@ -1,6 +1,6 @@
 
 import numpy as np
-from backend.services.embeddings.embedder import embed_text
+from backend.services.embeddings.embedder import embed_texts
 from backend.db.session import supabase
 from backend.core.config import settings
 from backend.core.logging import get_logger
@@ -43,7 +43,7 @@ def retrieve_chunks(
     - 0.7 = balanced (default)
     """
     try:
-        query_vector = embed_text([query], task_type="RETRIEVAL_QUERY")[0]
+        query_vector = embed_texts(query, task_type="RETRIEVAL_QUERY")
     except Exception as e:
         logger.error("query_embedding_failed", error=str(e))
         return []
