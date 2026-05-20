@@ -304,14 +304,6 @@ const LoginPage: React.FC = () => {
             <motion.button type="button" className={styles.socialBtn} variants={itemVariants} onClick={handleGoogleLogin}>
               <span>G</span> Continue with Google
             </motion.button>
-            <motion.button
-              type="button"
-              className={styles.socialBtn}
-              variants={itemVariants}
-              onClick={() => setError('Apple login is not configured yet.')}
-            >
-              <span>A</span> Continue with Apple
-            </motion.button>
           </motion.div>
 
           <motion.p className={styles.signupLink} variants={itemVariants}>

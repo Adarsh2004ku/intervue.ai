@@ -1,6 +1,8 @@
 import asyncio
 import json
+import math
 import re
+import time
 from statistics import mean
 
 from google import genai
@@ -13,6 +15,27 @@ from backend.services.cost_tracking import extract_gemini_usage
 logger = get_logger("behavior")
 
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
+_GEMINI_VISION_COOLDOWN_UNTIL = 0.0
+_GEMINI_RATE_LIMIT_MARKERS = (
+    "429",
+    "quota",
+    "rate limit",
+    "ratelimit",
+    "rate_limit",
+    "resource_exhausted",
+    "resource exhausted",
+    "too many requests",
+    "exceeded",
+)
+GEMINI_RATE_LIMIT_NOTE = (
+    "AI behavior analysis is temporarily unavailable because the Gemini "
+    "vision quota or rate limit was reached. Frame analysis will retry "
+    "automatically after the cooldown."
+)
+GEMINI_UNAVAILABLE_NOTE = (
+    "AI behavior analysis is temporarily unavailable. Frame analysis will "
+    "retry automatically on a later capture."
+)
 
 
 # =========================================================
@@ -38,6 +61,65 @@ DEFAULT_RESPONSE = {
     "confidence_level": "medium",
     "notes": "Could not analyze behavior",
 }
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _GEMINI_RATE_LIMIT_MARKERS)
+
+
+def _retry_delay_seconds(error: Exception) -> int | None:
+    message = str(error).lower()
+    patterns = (
+        r"retry(?: in| after)?\s+([0-9]+(?:\.[0-9]+)?)\s*s",
+        r"retrydelay['\"]?\s*[:=]\s*['\"]?([0-9]+(?:\.[0-9]+)?)\s*s",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, message)
+        if match:
+            return max(1, math.ceil(float(match.group(1))))
+
+    return None
+
+
+def _gemini_vision_cooldown_remaining() -> float:
+    return max(0.0, _GEMINI_VISION_COOLDOWN_UNTIL - time.time())
+
+
+def _start_gemini_vision_cooldown(error: Exception) -> int:
+    global _GEMINI_VISION_COOLDOWN_UNTIL
+
+    cooldown_seconds = _retry_delay_seconds(error)
+    if cooldown_seconds is None:
+        cooldown_seconds = max(0, settings.gemini_cooldown_seconds)
+
+    if cooldown_seconds <= 0:
+        return 0
+
+    _GEMINI_VISION_COOLDOWN_UNTIL = max(
+        _GEMINI_VISION_COOLDOWN_UNTIL,
+        time.time() + cooldown_seconds,
+    )
+    return cooldown_seconds
+
+
+def _unavailable_response(
+    notes: str,
+    error_code: str,
+    retry_after_seconds: int | None = None,
+) -> dict:
+    response = {
+        **DEFAULT_RESPONSE,
+        "notes": notes,
+        "analysis_unavailable": True,
+        "error_code": error_code,
+        "provider": "gemini",
+        "model": GEMINI_VISION_MODEL,
+    }
+    if retry_after_seconds is not None:
+        response["retry_after_seconds"] = max(0, retry_after_seconds)
+    return response
 
 
 # =========================================================
@@ -76,6 +158,14 @@ async def analyze_frame(
         if not frame_bytes:
             raise ValueError(
                 "Empty frame received"
+            )
+
+        cooldown_remaining = _gemini_vision_cooldown_remaining()
+        if cooldown_remaining > 0:
+            return _unavailable_response(
+                GEMINI_RATE_LIMIT_NOTE,
+                "gemini_rate_limited",
+                math.ceil(cooldown_remaining),
             )
 
         # =================================================
@@ -301,12 +391,10 @@ Rules:
             error=str(e),
         )
 
-        return {
-            **DEFAULT_RESPONSE,
-            "notes": (
-                "Could not parse Gemini response"
-            ),
-        }
+        return _unavailable_response(
+            "AI behavior analysis returned an unreadable response. Retrying on the next frame.",
+            "gemini_parse_failed",
+        )
 
     # =====================================================
     # Timeout Error
@@ -317,27 +405,38 @@ Rules:
             "vision_timeout"
         )
 
-        return {
-            **DEFAULT_RESPONSE,
-            "notes": "Gemini request timeout",
-        }
+        return _unavailable_response(
+            "AI behavior analysis timed out. Retrying on the next frame.",
+            "gemini_timeout",
+        )
 
     # =====================================================
     # General Errors
     # =====================================================
     except Exception as e:
+        if _is_rate_limit_error(e):
+            cooldown_seconds = _start_gemini_vision_cooldown(e)
+            logger.warning(
+                "behavior_analysis_rate_limited",
+                model=GEMINI_VISION_MODEL,
+                cooldown_seconds=cooldown_seconds,
+                error=str(e),
+            )
+            return _unavailable_response(
+                GEMINI_RATE_LIMIT_NOTE,
+                "gemini_rate_limited",
+                cooldown_seconds,
+            )
 
         logger.exception(
             "behavior_analysis_failed",
             error=str(e)
         )
 
-        return {
-            **DEFAULT_RESPONSE,
-            "notes": (
-                f"Behavior analysis failed: {str(e)}"
-            ),
-        }
+        return _unavailable_response(
+            GEMINI_UNAVAILABLE_NOTE,
+            "gemini_unavailable",
+        )
 
 
 # =========================================================
@@ -351,6 +450,12 @@ def aggregate_behavior_analysis(
     into final interview behavior analytics.
     """
 
+    original_frames = frames
+    frames = [
+        frame for frame in frames
+        if not frame.get("analysis_unavailable")
+    ]
+
     if not frames:
 
         return {
@@ -362,7 +467,9 @@ def aggregate_behavior_analysis(
             "distraction_ratio": 0,
             "dominant_emotion": "neutral",
             "behavior_summary": (
-                "No behavior data available"
+                "Behavior analysis was unavailable for the captured frames"
+                if original_frames
+                else "No behavior data available"
             ),
         }
 

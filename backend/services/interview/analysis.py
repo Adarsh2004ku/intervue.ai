@@ -52,7 +52,8 @@ async def analyze_frame_submission(
         result=result,
         latency_ms=latency_ms,
     )
-    append_session_item(interview_id, "frames", result)
+    if not result.get("analysis_unavailable"):
+        append_session_item(interview_id, "frames", result)
 
     return {
         "success": True,
@@ -136,6 +137,15 @@ async def analyze_audio_submission(
             question_id=question_row.get("id"),
             error=str(e),
         )
+
+    if result.get("analysis_unavailable"):
+        return {
+            "success": True,
+            "evaluation": result,
+            "next_question": None,
+            "cost": cost_record,
+            "session_cost": get_interview_cost_summary(interview_id),
+        }
 
     try:
         previous_questions = fetch_questions_for_interview(interview_id)

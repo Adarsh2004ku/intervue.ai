@@ -29,7 +29,8 @@ async def handle_websocket_frame(
         result=result,
         latency_ms=0,
     )
-    append_session_item(interview_id, "frames", result)
+    if not result.get("analysis_unavailable"):
+        append_session_item(interview_id, "frames", result)
 
     await websocket.send_json({
         "type": "vision",

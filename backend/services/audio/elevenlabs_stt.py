@@ -10,6 +10,14 @@ from backend.core.logging import get_logger
 logger = get_logger("elevenlabs_stt")
 
 ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
+ELEVENLABS_AUTH_ERROR = (
+    "ElevenLabs speech-to-text is not authorized. Check ELEVENLABS_API_KEY "
+    "and your ElevenLabs account access, then retry this answer."
+)
+ELEVENLABS_UNAVAILABLE_ERROR = (
+    "ElevenLabs speech-to-text is temporarily unavailable. Your answer was "
+    "not transcribed, so scoring could not be completed for this response."
+)
 
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at",
@@ -133,6 +141,29 @@ def _evaluate_transcript(transcript: str, question: str, stt_response: dict) -> 
     }
 
 
+def _unavailable_result(reasoning: str, error_code: str) -> dict:
+    return {
+        "transcript": "",
+        "score": 0,
+        "accuracy_score": 0,
+        "clarity_score": 0,
+        "depth_score": 0,
+        "confidence_score": 0,
+        "communication_score": 0,
+        "reasoning": reasoning,
+        "word_count": 0,
+        "stopword_count": 0,
+        "filler_count": 0,
+        "keyword_overlap_percent": 0,
+        "words_per_minute": 0,
+        "provider": "elevenlabs",
+        "model": settings.elevenlabs_stt_model,
+        "analysis_unavailable": True,
+        "error_code": error_code,
+        "_billable": False,
+    }
+
+
 async def _transcribe_with_elevenlabs(
     audio_bytes: bytes,
     mime_type: str,
@@ -192,6 +223,27 @@ async def transcribe_and_evaluate(
         result["_billable"] = True
         return result
 
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code if e.response is not None else None
+        error_detail = e.response.text[:500] if e.response is not None else str(e)
+        logger.warning(
+            "audio_evaluation_provider_http_error",
+            provider="elevenlabs",
+            status_code=status_code,
+            error=error_detail,
+        )
+
+        if status_code in {401, 403}:
+            return _unavailable_result(
+                ELEVENLABS_AUTH_ERROR,
+                "elevenlabs_unauthorized",
+            )
+
+        return _unavailable_result(
+            ELEVENLABS_UNAVAILABLE_ERROR,
+            "elevenlabs_unavailable",
+        )
+
     except Exception as e:
         logger.exception(
             "audio_evaluation_failed",
@@ -199,16 +251,7 @@ async def transcribe_and_evaluate(
             error=str(e),
         )
 
-        return {
-            "transcript": "",
-            "score": 0,
-            "accuracy_score": 0,
-            "clarity_score": 0,
-            "depth_score": 0,
-            "confidence_score": 0,
-            "communication_score": 0,
-            "reasoning": str(e),
-            "provider": "elevenlabs",
-            "model": settings.elevenlabs_stt_model,
-            "_billable": False,
-        }
+        return _unavailable_result(
+            ELEVENLABS_UNAVAILABLE_ERROR,
+            "elevenlabs_unavailable",
+        )

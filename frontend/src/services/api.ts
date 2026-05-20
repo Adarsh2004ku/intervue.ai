@@ -254,6 +254,8 @@ export type AudioEvaluation = {
   };
   provider?: string;
   model?: string;
+  analysis_unavailable?: boolean;
+  error_code?: string;
 };
 
 export type AnalyzeAudioResponse = {
@@ -278,6 +280,11 @@ export type BehaviorAnalysis = {
   posture: string;
   confidence_level: string;
   notes: string;
+  provider?: string;
+  model?: string;
+  analysis_unavailable?: boolean;
+  error_code?: string;
+  retry_after_seconds?: number;
 };
 
 export type BehaviorSummary = {

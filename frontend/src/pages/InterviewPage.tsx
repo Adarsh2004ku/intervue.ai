@@ -54,6 +54,18 @@ const fallbackQuestion: InterviewQuestion = {
   order_idx: 0,
 };
 
+const providerIssuePattern = /failed|error|unable|unavailable|quota|429|exhausted/i;
+
+const behaviorUnavailableStatus = (analysis: BehaviorAnalysis) => (
+  analysis.retry_after_seconds
+    ? `Behavior analysis paused; retrying in ${analysis.retry_after_seconds}s.`
+    : 'Behavior analysis temporarily unavailable; retrying automatically.'
+);
+
+const speechUnavailableStatus = (evaluation: AudioEvaluation) => (
+  evaluation.reasoning || 'Speech analysis temporarily unavailable. Check provider credentials and retry.'
+);
+
 const InterviewPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -70,6 +82,7 @@ const InterviewPage: React.FC = () => {
   const speechTimeoutRef = useRef<number | null>(null);
   const pendingSpeechTextRef = useRef('');
   const pendingSpeechRequestRef = useRef('');
+  const behaviorRetryAfterRef = useRef(0);
   const interviewId = searchParams.get('interviewId') || activeInterviewStore().get()?.interview_id || '';
   const activeInterview = activeInterviewStore().get();
 
@@ -178,11 +191,19 @@ const InterviewPage: React.FC = () => {
       }
 
       if (message.type === 'vision' && message.data) {
-        setLatestBehavior(message.data as BehaviorAnalysis);
+        const analysis = message.data as BehaviorAnalysis;
+        setLatestBehavior(analysis);
+        if (analysis.analysis_unavailable && analysis.retry_after_seconds) {
+          behaviorRetryAfterRef.current = Date.now() + (analysis.retry_after_seconds * 1000);
+        }
         if (message.session_cost) {
           setSessionCost(message.session_cost);
         }
-        setSessionStatus('Vision analysis received');
+        setSessionStatus(
+          analysis.analysis_unavailable
+            ? behaviorUnavailableStatus(analysis)
+            : 'Vision analysis received',
+        );
       }
 
       if (message.type === 'summary' && message.data) {
@@ -285,6 +306,10 @@ const InterviewPage: React.FC = () => {
     let cancelled = false;
 
     const captureFrame = () => {
+      if (Date.now() < behaviorRetryAfterRef.current) {
+        return;
+      }
+
       const video = localVideoRef.current;
       if (!video || video.videoWidth === 0 || video.videoHeight === 0 || cancelled) {
         return;
@@ -307,11 +332,19 @@ const InterviewPage: React.FC = () => {
         try {
           const result = await api.interview.analyzeFrame(interviewId, blob);
           if (result.success && result.analysis) {
-            setLatestBehavior(result.analysis);
+            const analysis = result.analysis;
+            setLatestBehavior(analysis);
+            if (analysis.analysis_unavailable && analysis.retry_after_seconds) {
+              behaviorRetryAfterRef.current = Date.now() + (analysis.retry_after_seconds * 1000);
+            }
             if (result.session_cost) {
               setSessionCost(result.session_cost);
             }
-            setSessionStatus('Camera behavior analyzed');
+            setSessionStatus(
+              analysis.analysis_unavailable
+                ? behaviorUnavailableStatus(analysis)
+                : 'Camera behavior analyzed',
+            );
           } else if (result.error) {
             setSessionStatus(result.error);
           }
@@ -340,6 +373,7 @@ const InterviewPage: React.FC = () => {
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
+  const availableBehavior = latestBehavior?.analysis_unavailable ? null : latestBehavior;
 
   const analyticsMetrics = useMemo(() => {
     const normalize = (value?: number | null, fallback = 0) => (
@@ -357,7 +391,7 @@ const InterviewPage: React.FC = () => {
         label: 'Confidence',
         score: normalize(
           latestEvaluation?.confidence_score
-            ?? latestBehavior?.confidence_score
+            ?? availableBehavior?.confidence_score
             ?? behaviorSummary?.overall_confidence,
           connected ? 82 : 0,
         ),
@@ -366,7 +400,7 @@ const InterviewPage: React.FC = () => {
       {
         label: 'Engagement',
         score: normalize(
-          latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement,
+          availableBehavior?.engagement_score ?? behaviorSummary?.overall_engagement,
           connected ? 78 : 0,
         ),
         hint: 'Camera presence',
@@ -377,19 +411,56 @@ const InterviewPage: React.FC = () => {
         hint: 'Reasoning depth',
       },
     ];
-  }, [behaviorSummary, connected, latestBehavior, latestEvaluation, latestScore]);
+  }, [availableBehavior, behaviorSummary, connected, latestEvaluation, latestScore]);
 
-  const aiAnalysisUnavailable = useMemo(() => (
-    /failed|error|unable|unavailable|quota|429|exhausted/i.test(sessionStatus)
+  const statusIndicatesProviderIssue = useMemo(() => (
+    providerIssuePattern.test(sessionStatus)
   ), [sessionStatus]);
+
+  const aiSummaryText = useMemo(() => {
+    if (latestEvaluation?.analysis_unavailable) {
+      return latestEvaluation.reasoning || 'Speech analysis temporarily unavailable.';
+    }
+    if (latestReasoning) {
+      return latestReasoning;
+    }
+    if (statusIndicatesProviderIssue) {
+      return 'AI analysis temporarily unavailable.';
+    }
+    return behaviorSummary?.behavior_summary
+      || latestBehavior?.notes
+      || 'AI summary appears after the first answer is evaluated.';
+  }, [behaviorSummary, latestBehavior, latestEvaluation, latestReasoning, statusIndicatesProviderIssue]);
+
+  const behaviorAnalysisUnavailable = Boolean(latestBehavior?.analysis_unavailable);
+  const behaviorSnapshotText = useMemo(() => {
+    if (behaviorAnalysisUnavailable) {
+      return latestBehavior?.notes || 'AI behavior analysis temporarily unavailable.';
+    }
+    return behaviorSummary?.behavior_summary
+      || latestBehavior?.notes
+      || 'Camera behavior insights will appear after frame analysis.';
+  }, [behaviorAnalysisUnavailable, behaviorSummary, latestBehavior]);
+  const analysisWarningVisible = Boolean(
+    latestEvaluation?.analysis_unavailable
+      || behaviorAnalysisUnavailable
+      || statusIndicatesProviderIssue,
+  );
+  const analysisWarningText = latestEvaluation?.analysis_unavailable
+    ? 'Speech scoring needs a valid ElevenLabs transcription response before it can score answers.'
+    : 'We will keep the interview running and refresh insights when the next analysis succeeds.';
 
   const liveInsights = useMemo(() => [
     connected ? 'Realtime interview channel is connected.' : 'Waiting for realtime interview channel.',
-    latestEvaluation ? `Latest answer score: ${latestEvaluation.score}/100.` : 'Submit an answer to unlock score analysis.',
-    latestBehavior
-      ? `Eye contact is ${latestBehavior.eye_contact ? 'detected' : 'not steady yet'} with ${latestBehavior.emotion || 'neutral'} affect.`
+    latestEvaluation?.analysis_unavailable
+      ? 'Speech analysis is unavailable for the latest answer.'
+      : latestEvaluation ? `Latest answer score: ${latestEvaluation.score}/100.` : 'Submit an answer to unlock score analysis.',
+    latestBehavior?.analysis_unavailable
+      ? 'Behavior analysis is cooling down and will retry automatically.'
+      : availableBehavior
+      ? `Eye contact is ${availableBehavior.eye_contact ? 'detected' : 'not steady yet'} with ${availableBehavior.emotion || 'neutral'} affect.`
       : 'Camera behavior analysis starts once frames are processed.',
-  ], [connected, latestBehavior, latestEvaluation]);
+  ], [availableBehavior, connected, latestBehavior, latestEvaluation]);
 
   const costRows = useMemo(() => (
     Object.entries(sessionCost?.by_call_type || {})
@@ -606,7 +677,11 @@ const InterviewPage: React.FC = () => {
       activeInterviewStore().update({
         first_question: nextQuestion,
       });
-      setSessionStatus('Answer evaluated. Next question is ready.');
+      setSessionStatus(
+        evaluation.analysis_unavailable
+          ? speechUnavailableStatus(evaluation)
+          : 'Answer evaluated. Next question is ready.',
+      );
       if (voiceEnabled && nextQuestion.text) {
         window.setTimeout(() => speakText(nextQuestion.text || ''), 0);
       }
@@ -944,10 +1019,10 @@ const InterviewPage: React.FC = () => {
               </div>
             </motion.div>
 
-            {aiAnalysisUnavailable && (
+            {analysisWarningVisible && (
               <motion.div className={styles.aiWarningCard} variants={itemVariants}>
                 <strong>AI analysis temporarily unavailable</strong>
-                <span>We will keep the interview running and refresh insights when the next analysis succeeds.</span>
+                <span>{analysisWarningText}</span>
               </motion.div>
             )}
 
@@ -1020,11 +1095,7 @@ const InterviewPage: React.FC = () => {
                   <h3>AI summary</h3>
                   <span>{latestEvaluation?.provider || 'Intervue AI'}</span>
                 </div>
-                <p>
-                  {aiAnalysisUnavailable
-                    ? 'AI analysis temporarily unavailable'
-                    : latestReasoning || behaviorSummary?.behavior_summary || latestBehavior?.notes || 'AI summary appears after the first answer is evaluated.'}
-                </p>
+                <p>{aiSummaryText}</p>
                 <div className={styles.liveInsights}>
                   {liveInsights.map((insight) => (
                     <span key={insight}>{insight}</span>
@@ -1035,14 +1106,14 @@ const InterviewPage: React.FC = () => {
               <motion.div className={styles.behaviorSnapshotCard} variants={itemVariants}>
                 <div className={styles.analyticsCardHeader}>
                   <h3>Behavior signals</h3>
-                  <span>{latestBehavior ? 'Active' : 'Pending'}</span>
+                  <span>{availableBehavior ? 'Active' : behaviorAnalysisUnavailable ? 'Paused' : 'Pending'}</span>
                 </div>
                 <div className={styles.behaviorGrid}>
-                  <span>Engagement: {latestBehavior?.engagement_score ?? behaviorSummary?.overall_engagement ?? 0}</span>
-                  <span>Eye contact: {behaviorSummary?.eye_contact_ratio ?? (latestBehavior?.eye_contact ? 100 : 0)}%</span>
-                  <span>Emotion: {behaviorSummary?.dominant_emotion || latestBehavior?.emotion || 'neutral'}</span>
+                  <span>Engagement: {availableBehavior?.engagement_score ?? behaviorSummary?.overall_engagement ?? 0}</span>
+                  <span>Eye contact: {behaviorSummary?.eye_contact_ratio ?? (availableBehavior?.eye_contact ? 100 : 0)}%</span>
+                  <span>Emotion: {behaviorSummary?.dominant_emotion || availableBehavior?.emotion || 'neutral'}</span>
                 </div>
-                <p>{aiAnalysisUnavailable ? 'AI analysis temporarily unavailable' : behaviorSummary?.behavior_summary || latestBehavior?.notes || 'Camera behavior insights will appear after frame analysis.'}</p>
+                <p>{behaviorSnapshotText}</p>
               </motion.div>
             </motion.div>
 
