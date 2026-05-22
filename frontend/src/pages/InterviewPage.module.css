@@ -8,6 +8,8 @@
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   color: white;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  position: relative;
+  z-index: 1;
   overflow-x: hidden;
 }
 
@@ -789,8 +791,6 @@
   padding: 1rem;
 }
 
-.leftPanel,
-.rightPanel,
 .videoBox,
 .questionPanel,
 .insightPanel,
@@ -808,7 +808,10 @@
 
 .leftPanel,
 .rightPanel {
-  padding: 1rem;
+  padding: 0;
+  position: sticky;
+  top: 1rem;
+  height: fit-content;
 }
 
 .videoGrid {
@@ -1214,8 +1217,6 @@
   gap: 0.75rem;
 }
 
-.leftPanel,
-.rightPanel,
 .questionPanel,
 .feedbackSection,
 .costSection,
@@ -1990,8 +1991,6 @@
 }
 
 .interviewHeader,
-.leftPanel,
-.rightPanel,
 .questionPanel,
 .insightPanel,
 .costSection,
@@ -2057,7 +2056,10 @@
 .leftPanel,
 .rightPanel {
   gap: 1rem;
-  padding: 1rem;
+  padding: 0;
+  position: sticky;
+  top: 1rem;
+  height: fit-content;
 }
 
 .cameraStage {
@@ -2490,8 +2492,6 @@
 }
 
 .interviewHeader,
-.leftPanel,
-.rightPanel,
 .questionPanel,
 .insightPanel,
 .costSection,
@@ -2559,7 +2559,10 @@
 .leftPanel,
 .rightPanel {
   gap: 1rem;
-  padding: 1rem;
+  padding: 0;
+  position: sticky;
+  top: 1rem;
+  height: fit-content;
 }
 
 .cameraStage {

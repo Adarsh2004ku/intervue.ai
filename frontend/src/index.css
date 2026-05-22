@@ -1,34 +1,33 @@
 :root {
   color-scheme: light;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  --brand-primary: #7c3aed;
+  --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --brand-primary: #6366f1;
   --brand-secondary: #8b5cf6;
-  --brand-lavender: #f3f0ff;
-  --brand-bg: #f8f9fc;
-  --brand-card: #ffffff;
-  --brand-border: #e9eaf3;
-  --brand-text: #1f1f28;
-  --brand-muted: #70707b;
-  --brand-success: #22c55e;
+  --brand-lavender: rgba(99, 102, 241, 0.1);
+  --brand-bg: #f8fafc;
+  --brand-card: rgba(255, 255, 255, 0.9);
+  --brand-border: #e2e8f0;
+  --brand-text: #1e293b;
+  --brand-muted: #64748b;
+  --brand-success: #10b981;
   --brand-danger: #ef4444;
   --bg-page: var(--brand-bg);
-  --bg-panel: rgba(255, 255, 255, 0.86);
-  --bg-panel-strong: rgba(255, 255, 255, 0.94);
-  --bg-elevated: rgba(255, 255, 255, 0.9);
-  --border-subtle: rgba(233, 234, 243, 0.86);
-  --border-strong: #e9eaf3;
+  --bg-panel: rgba(255, 255, 255, 0.9);
+  --bg-panel-strong: rgba(255, 255, 255, 0.95);
+  --bg-elevated: rgba(255, 255, 255, 0.8);
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
   --text-primary: var(--brand-text);
   --text-secondary: var(--brand-muted);
-  --text-muted: #8a8a96;
-  --accent-cyan: var(--brand-primary);
-  --accent-emerald: var(--brand-secondary);
-  --accent-violet: var(--brand-secondary);
-  --accent-amber: #a78bfa;
-  --accent-rose: var(--brand-danger);
-  --shadow-panel: 0 24px 70px rgba(31, 31, 40, 0.08);
-  --shadow-soft: 0 18px 48px rgba(31, 31, 40, 0.07);
-  --radius-card: 24px;
+  --text-muted: #94a3b8;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-violet: #8b5cf6;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --shadow-panel: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0 4px 15px rgba(0, 0, 0, 0.08);
+  --radius-card: 16px;
   --radius-pill: 999px;
 }
 
@@ -73,8 +72,8 @@ a {
 }
 
 ::selection {
-  background: rgba(124, 58, 237, 0.18);
-  color: var(--brand-primary);
+  background: rgba(99, 102, 241, 0.18);
+  color: #6366f1;
 }
 
 @media (prefers-reduced-motion: reduce) {

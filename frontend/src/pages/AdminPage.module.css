@@ -14,6 +14,7 @@
   color: var(--admin-text);
   font-family: var(--font-sans);
   position: relative;
+  z-index: 1;
 }
 
 .adminPage > div[aria-hidden="true"] {
@@ -284,3 +285,4 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
