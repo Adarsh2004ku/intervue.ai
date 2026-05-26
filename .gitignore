@@ -10,3 +10,4 @@ dist/
 .next/
 *.egg-info/
 backend/.env
+adarsh04py.pem
